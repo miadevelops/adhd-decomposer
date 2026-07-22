@@ -185,9 +185,9 @@ class PurchaseService extends ChangeNotifier {
       );
     }
     try {
-      final result = await Purchases.purchasePackage(package);
-      _customerInfo = result;
-      _updatePremiumStatus(result);
+      final result = await Purchases.purchase(PurchaseParams.package(package));
+      _customerInfo = result.customerInfo;
+      _updatePremiumStatus(result.customerInfo);
       
       return _isPremium;
     } on PlatformException catch (e) {

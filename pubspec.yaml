@@ -1,7 +1,7 @@
 name: adhd_decomposer
 description: "ADHD-friendly task decomposition app"
 publish_to: 'none'
-version: 1.0.0+6
+version: 1.0.0+7
 
 environment:
   sdk: ^3.5.0
@@ -48,7 +48,7 @@ dependencies:
   in_app_review: ^2.0.9
   
   # In-app purchases
-  purchases_flutter: ^8.0.0
+  purchases_flutter: ^10.4.2
   
   # Calendar integration
   device_calendar: ^4.3.2

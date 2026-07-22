@@ -17,10 +17,11 @@ class CoachPickerPage extends StatefulWidget {
 class _CoachPickerPageState extends State<CoachPickerPage> {
   CoachType? _selectedCoach;
   
-  // Only show free coaches in onboarding
-  final List<Coach> _coaches = Coaches.freeCoaches;
+  // Show all coaches – free ones selectable, premium ones shown disabled
+  final List<Coach> _allCoaches = Coaches.all;
 
   void _selectCoach(Coach coach) {
+    if (!Coaches.isFreeCoch(coach.type)) return; // guard against premium taps
     setState(() => _selectedCoach = coach.type);
     
     // Save selection
@@ -62,9 +63,10 @@ class _CoachPickerPageState extends State<CoachPickerPage> {
           
           Expanded(
             child: ListView.builder(
-              itemCount: _coaches.length,
+              itemCount: _allCoaches.length,
               itemBuilder: (context, index) {
-                final coach = _coaches[index];
+                final coach = _allCoaches[index];
+                final isFree = Coaches.isFreeCoch(coach.type);
                 final isSelected = _selectedCoach == coach.type;
                 
                 return Padding(
@@ -72,7 +74,8 @@ class _CoachPickerPageState extends State<CoachPickerPage> {
                   child: _CoachCard(
                     coach: coach,
                     isSelected: isSelected,
-                    onTap: () => _selectCoach(coach),
+                    isLocked: !isFree,
+                    onTap: isFree ? () => _selectCoach(coach) : null,
                   ),
                 ).animate()
                     .fadeIn(delay: Duration(milliseconds: 200 + index * 80))
@@ -80,33 +83,6 @@ class _CoachPickerPageState extends State<CoachPickerPage> {
               },
             ),
           ),
-          
-          // Hint about more coaches
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Row(
-              children: [
-                Icon(
-                  Icons.workspace_premium,
-                  size: 20,
-                  color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.7),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    '3 more coaching styles available with Pro',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(context).textTheme.bodySmall?.color?.withValues(alpha: 0.7),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ).animate().fadeIn(delay: 500.ms),
           
           const SizedBox(height: 16),
         ],
@@ -118,86 +94,119 @@ class _CoachPickerPageState extends State<CoachPickerPage> {
 class _CoachCard extends StatelessWidget {
   final Coach coach;
   final bool isSelected;
-  final VoidCallback onTap;
+  final bool isLocked;
+  final VoidCallback? onTap;
   
   const _CoachCard({
     required this.coach,
     required this.isSelected,
-    required this.onTap,
+    this.isLocked = false,
+    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: isSelected
-          ? Theme.of(context).colorScheme.primaryContainer
-          : Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
-      borderRadius: BorderRadius.circular(16),
-      child: InkWell(
-        onTap: onTap,
+    final dimOpacity = isLocked ? 0.45 : 1.0;
+
+    return Opacity(
+      opacity: dimOpacity,
+      child: Material(
+        color: isSelected
+            ? Theme.of(context).colorScheme.primaryContainer
+            : Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
         borderRadius: BorderRadius.circular(16),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: isSelected
-                  ? Theme.of(context).colorScheme.primary
-                  : Theme.of(context).colorScheme.outline.withValues(alpha: 0.2),
-              width: 2,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(16),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: isSelected
+                    ? Theme.of(context).colorScheme.primary
+                    : Theme.of(context).colorScheme.outline.withValues(alpha: 0.2),
+                width: 2,
+              ),
             ),
-          ),
-          child: Row(
-            children: [
-              // Coach icon
-              Container(
-                width: 56,
-                height: 56,
-                decoration: BoxDecoration(
-                  color: isSelected
-                      ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.2)
-                      : Theme.of(context).colorScheme.surface,
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Center(
-                  child: Icon(
-                    coach.icon,
-                    size: 28,
+            child: Row(
+              children: [
+                // Coach icon
+                Container(
+                  width: 56,
+                  height: 56,
+                  decoration: BoxDecoration(
                     color: isSelected
-                        ? Theme.of(context).colorScheme.primary
-                        : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
+                        ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.2)
+                        : Theme.of(context).colorScheme.surface,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Center(
+                    child: Icon(
+                      coach.icon,
+                      size: 28,
+                      color: isSelected
+                          ? Theme.of(context).colorScheme.primary
+                          : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(width: 16),
-              // Coach info
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      coach.name,
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
+                const SizedBox(width: 16),
+                // Coach info
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        coach.name,
+                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      coach.tagline,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).textTheme.bodySmall?.color?.withValues(alpha: 0.8),
+                      const SizedBox(height: 2),
+                      Text(
+                        coach.tagline,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).textTheme.bodySmall?.color?.withValues(alpha: 0.8),
+                        ),
                       ),
+                    ],
+                  ),
+                ),
+                if (isSelected)
+                  Icon(
+                    Icons.check_circle,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                if (isLocked)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(8),
                     ),
-                  ],
-                ),
-              ),
-              if (isSelected)
-                Icon(
-                  Icons.check_circle,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-            ],
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.lock_rounded,
+                          size: 14,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          'PRO',
+                          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                            color: Theme.of(context).colorScheme.primary,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
           ),
         ),
       ),
