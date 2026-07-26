@@ -182,6 +182,7 @@ class _DecomposeScreenState extends State<DecomposeScreen> {
           Semantics(
             label: 'Break it down into steps',
             button: true,
+            excludeSemantics: true,
             enabled: _controller.text.trim().isNotEmpty,
             hint: _controller.text.trim().isEmpty 
                 ? 'Enter a task first' 
@@ -280,6 +281,7 @@ class _DecomposeScreenState extends State<DecomposeScreen> {
         children: suggestions.map((s) => Semantics(
           label: 'Use suggestion: $s',
           button: true,
+          excludeSemantics: true,
           child: SizedBox(
             height: kMinTouchTarget,
             child: ActionChip(

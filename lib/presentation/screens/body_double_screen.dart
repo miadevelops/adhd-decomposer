@@ -23,11 +23,11 @@ class BodyDoubleScreen extends StatefulWidget {
 
 class _BodyDoubleScreenState extends State<BodyDoubleScreen>
     with TickerProviderStateMixin {
+  TaskProvider? _taskProvider;
+
   // Audio
   final AmbientAudioService _ambientAudio = AmbientAudioService();
   final SoundService _soundService = SoundService();
-  double _volume = 0.5;
-  bool _isMuted = false;
   
   // Timer - Pomodoro style
   Timer? _timer;
@@ -54,6 +54,7 @@ class _BodyDoubleScreenState extends State<BodyDoubleScreen>
   
   // UI state - controls visibility
   bool _showControls = true;
+  bool _isExiting = false;
   Timer? _hideControlsTimer;
   double _verticalDragDistance = 0.0;
   
@@ -81,13 +82,13 @@ class _BodyDoubleScreenState extends State<BodyDoubleScreen>
     // Pulse animation for presence indicator
     _pulseController = AnimationController(
       vsync: this,
-      duration: const Duration(seconds: 2),
+      duration: const Duration(seconds: 4),
     )..repeat(reverse: true);
     
     // Particle animation
     _particleController = AnimationController(
       vsync: this,
-      duration: const Duration(seconds: 10),
+      duration: const Duration(seconds: 90),
     )..repeat();
     
     // Initialize particles
@@ -110,6 +111,19 @@ class _BodyDoubleScreenState extends State<BodyDoubleScreen>
       _loadDefaultAmbientSound();
       _startHideControlsTimer();
     });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _taskProvider ??= context.read<TaskProvider>();
+  }
+
+  @override
+  void reassemble() {
+    super.reassemble();
+    _particles.clear();
+    _initParticles();
   }
   
   void _loadDefaultAmbientSound() {
@@ -144,7 +158,7 @@ class _BodyDoubleScreenState extends State<BodyDoubleScreen>
         x: _random.nextDouble(),
         y: _random.nextDouble(),
         size: _random.nextDouble() * 4 + 2,
-        speed: _random.nextDouble() * 0.0003 + 0.0001,
+        driftCycles: 1 + _random.nextInt(2),
         opacity: _random.nextDouble() * 0.3 + 0.1,
       ));
     }
@@ -156,8 +170,7 @@ class _BodyDoubleScreenState extends State<BodyDoubleScreen>
     if (_sessionStart != null) {
       final sessionMinutes = DateTime.now().difference(_sessionStart!).inMinutes;
       if (sessionMinutes > 0) {
-        final provider = context.read<TaskProvider>();
-        provider.recordBodyDoubleMinutes(sessionMinutes);
+        _taskProvider?.recordBodyDoubleMinutes(sessionMinutes);
       }
     }
     
@@ -179,7 +192,7 @@ class _BodyDoubleScreenState extends State<BodyDoubleScreen>
 
   void _startHideControlsTimer() {
     _hideControlsTimer?.cancel();
-    _hideControlsTimer = Timer(const Duration(seconds: 3), () {
+    _hideControlsTimer = Timer(const Duration(seconds: 10), () {
       if (mounted && !_showBreakPrompt) {
         setState(() => _showControls = false);
       }
@@ -191,11 +204,13 @@ class _BodyDoubleScreenState extends State<BodyDoubleScreen>
     _startHideControlsTimer();
   }
 
-  void _exitScreen() {
+  Future<void> _exitScreen() async {
+    if (_isExiting) return;
+    _isExiting = true;
     _timer?.cancel();
     _messageTimer?.cancel();
     _hideControlsTimer?.cancel();
-    _ambientAudio.stop();
+    await _ambientAudio.stop();
     if (mounted) {
       Navigator.of(context).pop();
     }
@@ -453,52 +468,61 @@ class _BodyDoubleScreenState extends State<BodyDoubleScreen>
     double innerSize = 80,
   }) {
     const baseColor = Color(0xFF6366f1);
+    final reduceAnimations = context.read<TaskProvider>().reduceAnimations;
     
-    return AnimatedBuilder(
-      animation: _pulseController,
-      builder: (context, child) {
-        final scale = 1.0 + (_pulseController.value * 0.08);
-        final glowOpacity = 0.2 + (_pulseController.value * 0.15);
-        
-        return Semantics(
-          label: 'Digital companion presence indicator',
-          child: Container(
-            width: outerSize * scale,
-            height: outerSize * scale,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: baseColor.withOpacity(0.15),
-              boxShadow: [
-                BoxShadow(
-                  color: baseColor.withOpacity(glowOpacity),
-                  blurRadius: 40,
-                  spreadRadius: 10,
-                ),
-              ],
-            ),
-            child: Center(
+    return SizedBox(
+      width: outerSize,
+      height: outerSize,
+      child: AnimatedBuilder(
+        animation: _pulseController,
+        builder: (context, child) {
+          final pulse = reduceAnimations ? 0.0 : _pulseController.value;
+          final scale = 1.0 + (pulse * 0.025);
+          final glowOpacity = 0.2 + (pulse * 0.08);
+
+          return Semantics(
+            label: 'Digital companion presence indicator',
+            child: Transform.scale(
+              scale: scale,
               child: Container(
-                width: innerSize,
-                height: innerSize,
+                width: outerSize,
+                height: outerSize,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  gradient: RadialGradient(
-                    colors: [
-                      baseColor.withOpacity(0.8),
-                      baseColor.withOpacity(0.4),
-                    ],
-                  ),
+                  color: baseColor.withOpacity(0.15),
+                  boxShadow: [
+                    BoxShadow(
+                      color: baseColor.withOpacity(glowOpacity),
+                      blurRadius: 40,
+                      spreadRadius: 10,
+                    ),
+                  ],
                 ),
-                child: Icon(
-                  Icons.favorite,
-                  size: 32,
-                  color: Colors.white.withOpacity(0.9),
+                child: Center(
+                  child: Container(
+                    width: innerSize,
+                    height: innerSize,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: RadialGradient(
+                        colors: [
+                          baseColor.withOpacity(0.8),
+                          baseColor.withOpacity(0.4),
+                        ],
+                      ),
+                    ),
+                    child: Icon(
+                      Icons.favorite,
+                      size: 32,
+                      color: Colors.white.withOpacity(0.9),
+                    ),
+                  ),
                 ),
               ),
             ),
-          ),
-        );
-      },
+          );
+        },
+      ),
     );
   }
 
@@ -672,9 +696,13 @@ class _BodyDoubleScreenState extends State<BodyDoubleScreen>
           ),
           SizedBox(height: compact ? 12 : 20),
           
-          // Timer controls (only show when controls visible)
-          if (_showControls)
-            Row(
+          // Keep controls in the layout so auto-hide does not shift content.
+          AnimatedOpacity(
+            opacity: _showControls ? 1.0 : 0.0,
+            duration: const Duration(milliseconds: 200),
+            child: IgnorePointer(
+              ignoring: !_showControls,
+              child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 // Reset button
@@ -725,6 +753,8 @@ class _BodyDoubleScreenState extends State<BodyDoubleScreen>
                 ),
               ],
             ),
+            ),
+          ),
         ],
       ),
     );
@@ -743,10 +773,7 @@ class _BodyDoubleScreenState extends State<BodyDoubleScreen>
         color: Colors.white.withOpacity(0.05),
         borderRadius: BorderRadius.circular(16),
       ),
-      child: Column(
-        children: [
-          // Sound selection
-          Row(
+      child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: AmbientSound.values.map((sound) {
               final isSelected = currentSound == sound;
@@ -824,54 +851,6 @@ class _BodyDoubleScreenState extends State<BodyDoubleScreen>
               );
             }).toList(),
           ),
-          
-          // Volume slider (only show if sound is selected)
-          if (currentSound != AmbientSound.none) ...[
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Semantics(
-                  label: _isMuted ? 'Unmute' : 'Mute',
-                  button: true,
-                  child: IconButton(
-                    icon: Icon(
-                      _isMuted ? Icons.volume_off : Icons.volume_up,
-                      color: Colors.white.withOpacity(0.6),
-                    ),
-                    onPressed: _toggleMute,
-                    iconSize: 20,
-                  ),
-                ),
-                Expanded(
-                  child: Semantics(
-                    label: 'Volume: ${(_volume * 100).round()} percent',
-                    slider: true,
-                    child: SliderTheme(
-                      data: SliderThemeData(
-                        trackHeight: 4,
-                        thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8),
-                        activeTrackColor: const Color(0xFF6366f1),
-                        inactiveTrackColor: Colors.white.withOpacity(0.2),
-                        thumbColor: Colors.white,
-                      ),
-                      child: Slider(
-                        value: _isMuted ? 0 : _volume,
-                        onChanged: (value) {
-                          setState(() {
-                            _volume = value;
-                            _isMuted = false;
-                          });
-                          _ambientAudio.setVolume(_volume);
-                        },
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ],
-      ),
     );
   }
 
@@ -1071,7 +1050,7 @@ class _BodyDoubleScreenState extends State<BodyDoubleScreen>
     });
   }
 
-  void _selectSound(AmbientSound sound) {
+  Future<void> _selectSound(AmbientSound sound) async {
     // Check if premium sound and user isn't premium
     final purchases = context.read<PurchaseService>();
     if (sound.isPremium && !purchases.isPremium) {
@@ -1081,15 +1060,10 @@ class _BodyDoubleScreenState extends State<BodyDoubleScreen>
       return;
     }
     
-    setState(() {});
-    _ambientAudio.play(sound);
-  }
-
-  void _toggleMute() {
-    setState(() {
-      _isMuted = !_isMuted;
-    });
-    _ambientAudio.setMuted(_isMuted);
+    await _ambientAudio.play(sound);
+    if (mounted) {
+      setState(() {});
+    }
   }
 }
 
@@ -1098,14 +1072,14 @@ class _FloatingParticle {
   double x;
   double y;
   final double size;
-  final double speed;
+  final int driftCycles;
   final double opacity;
 
   _FloatingParticle({
     required this.x,
     required this.y,
     required this.size,
-    required this.speed,
+    required this.driftCycles,
     required this.opacity,
   });
 }
@@ -1125,12 +1099,16 @@ class _ParticlePainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     for (final particle in particles) {
-      // Slow, gentle upward drift
-      final y = (particle.y - (time * particle.speed * 100)) % 1.0;
+      // Integer cycle counts make the controller's loop boundary seamless.
+      final y = (particle.y - (time * particle.driftCycles)) % 1.0;
       final x = particle.x + sin(time * 2 * pi + particle.y * 10) * 0.02;
-      
+      final edgeDistance = min(y, 1 - y);
+      final edgeFade = Curves.easeInOut.transform(
+        (edgeDistance / 0.1).clamp(0.0, 1.0),
+      );
+
       final paint = Paint()
-        ..color = color.withOpacity(particle.opacity)
+        ..color = color.withOpacity(particle.opacity * edgeFade)
         ..style = PaintingStyle.fill;
       
       canvas.drawCircle(

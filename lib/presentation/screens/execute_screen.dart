@@ -29,14 +29,15 @@ const double kMinTouchTarget = 48.0;
 class ExecuteScreen extends StatefulWidget {
   /// Optional callback when task is completed (used for routines)
   final VoidCallback? onTaskComplete;
-  
+
   const ExecuteScreen({super.key, this.onTaskComplete});
 
   @override
   State<ExecuteScreen> createState() => _ExecuteScreenState();
 }
 
-class _ExecuteScreenState extends State<ExecuteScreen> with SingleTickerProviderStateMixin {
+class _ExecuteScreenState extends State<ExecuteScreen>
+    with SingleTickerProviderStateMixin {
   late ConfettiController _confettiController;
   final SoundService _soundService = SoundService();
   final GlobalKey _shareCardKey = GlobalKey();
@@ -47,7 +48,7 @@ class _ExecuteScreenState extends State<ExecuteScreen> with SingleTickerProvider
   bool _showCelebration = false;
   String? _celebrationMessage;
   bool _hasTriggeredCompletion = false;
-  
+
   // Time blindness tracking
   Timer? _stepTimer;
   int _stepSecondsElapsed = 0;
@@ -56,17 +57,18 @@ class _ExecuteScreenState extends State<ExecuteScreen> with SingleTickerProvider
   bool _hasShownDoubleWarning = false;
   String? _timeBlindnessAlert;
   bool _isAlertSticky = false;
-  
+
   final _random = Random();
 
   @override
   void initState() {
     super.initState();
-    _confettiController = ConfettiController(duration: const Duration(seconds: 2));
-    
+    _confettiController =
+        ConfettiController(duration: const Duration(seconds: 2));
+
     // Start tracking time on this step
     _startStepTimer();
-    
+
     // Donate intent when user continues a task
     WidgetsBinding.instance.addPostFrameCallback((_) {
       SiriService().donateContinueTask();
@@ -80,7 +82,7 @@ class _ExecuteScreenState extends State<ExecuteScreen> with SingleTickerProvider
     _stepTimer?.cancel();
     super.dispose();
   }
-  
+
   /// Start tracking elapsed time on current step (for time blindness alerts)
   void _startStepTimer() {
     _stepTimer?.cancel();
@@ -90,7 +92,7 @@ class _ExecuteScreenState extends State<ExecuteScreen> with SingleTickerProvider
     _hasShownDoubleWarning = false;
     _timeBlindnessAlert = null;
     _isAlertSticky = false;
-    
+
     _stepTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (mounted) {
         setState(() {
@@ -100,60 +102,68 @@ class _ExecuteScreenState extends State<ExecuteScreen> with SingleTickerProvider
       }
     });
   }
-  
+
   /// Check and trigger time blindness alerts
   void _checkTimeBlindnessAlerts() {
     final provider = context.read<TaskProvider>();
     final step = provider.activeTask?.currentStep;
     if (step == null) return;
-    
+
     final estimatedSeconds = step.estimatedMinutes * 60;
     final elapsedMinutes = _stepSecondsElapsed ~/ 60;
-    
+
     // Alert 1: Timer has 5 minutes left (only if timer is running)
     if (_timerRunning && _secondsRemaining == 300 && !_hasShown5MinWarning) {
       _hasShown5MinWarning = true;
       _showTimeAlert('5 minutes left', sticky: false);
     }
-    
+
     // Alert 2: You've been on this step longer than estimated
-    if (_stepSecondsElapsed == estimatedSeconds && estimatedSeconds > 0 && !_hasShownEstimateWarning) {
+    if (_stepSecondsElapsed == estimatedSeconds &&
+        estimatedSeconds > 0 &&
+        !_hasShownEstimateWarning) {
       _hasShownEstimateWarning = true;
-      _showTimeAlert('${step.estimatedMinutes} min on this step — no rush, just a heads up', sticky: false);
+      _showTimeAlert(
+          '${step.estimatedMinutes} min on this step — no rush, just a heads up',
+          sticky: false);
     }
-    
+
     // Alert 3: Double the estimated time (gentle check-in) - STICKY
-    if (_stepSecondsElapsed == estimatedSeconds * 2 && estimatedSeconds > 0 && !_hasShownDoubleWarning) {
+    if (_stepSecondsElapsed == estimatedSeconds * 2 &&
+        estimatedSeconds > 0 &&
+        !_hasShownDoubleWarning) {
       _hasShownDoubleWarning = true;
-      _showTimeAlert('${elapsedMinutes} min now — stuck? Tap "I\'m stuck" for smaller steps', sticky: true);
+      _showTimeAlert(
+          '${elapsedMinutes} min now — stuck? Tap "I\'m stuck" for smaller steps',
+          sticky: true);
     }
   }
-  
+
   /// Show a time blindness alert banner
   void _showTimeAlert(String message, {bool sticky = false}) {
     if (!mounted) return;
-    
+
     final provider = context.read<TaskProvider>();
-    
+
     // Play gentle sound
     if (provider.soundEnabled) {
       _soundService.playTimeWarning();
     }
-    
+
     // Haptic feedback
     if (provider.hapticEnabled) {
       HapticFeedback.mediumImpact();
     }
-    
+
     // Show alert banner
     setState(() {
       _timeBlindnessAlert = message;
       _isAlertSticky = sticky;
     });
-    
+
     // Announce for screen readers
     SemanticsService.announce(message, TextDirection.ltr);
-    
+
     // Auto-dismiss after 5 seconds (only for non-sticky alerts)
     if (!sticky) {
       Future.delayed(const Duration(seconds: 5), () {
@@ -166,13 +176,13 @@ class _ExecuteScreenState extends State<ExecuteScreen> with SingleTickerProvider
       });
     }
   }
-  
+
   /// Check if animations should be reduced based on settings or system preferences
   bool _shouldReduceAnimations(BuildContext context) {
     final provider = context.read<TaskProvider>();
     return provider.reduceAnimations;
   }
-  
+
   /// Check if confetti should be shown
   bool _shouldShowConfetti(BuildContext context) {
     final provider = context.read<TaskProvider>();
@@ -197,11 +207,11 @@ class _ExecuteScreenState extends State<ExecuteScreen> with SingleTickerProvider
                   ),
                 );
               }
-              
+
               if (task.isCompleted) {
                 return _buildCompletionScreen(context, task);
               }
-              
+
               return _buildExecutionScreen(context, provider, task);
             },
           ),
@@ -223,16 +233,14 @@ class _ExecuteScreenState extends State<ExecuteScreen> with SingleTickerProvider
             ),
           ),
           // Celebration overlay
-          if (_showCelebration)
-            _buildCelebrationOverlay(context),
+          if (_showCelebration) _buildCelebrationOverlay(context),
           // Time blindness alert banner
-          if (_timeBlindnessAlert != null)
-            _buildTimeBlindnessAlert(context),
+          if (_timeBlindnessAlert != null) _buildTimeBlindnessAlert(context),
         ],
       ),
     );
   }
-  
+
   Widget _buildTimeBlindnessAlert(BuildContext context) {
     return Positioned(
       top: MediaQuery.of(context).padding.top + 8,
@@ -283,7 +291,8 @@ class _ExecuteScreenState extends State<ExecuteScreen> with SingleTickerProvider
     );
   }
 
-  Widget _buildExecutionScreen(BuildContext context, TaskProvider provider, Task task) {
+  Widget _buildExecutionScreen(
+      BuildContext context, TaskProvider provider, Task task) {
     final step = task.currentStep!;
     final stepNum = task.currentStepIndex + 1;
     final totalSteps = task.steps.length;
@@ -302,6 +311,7 @@ class _ExecuteScreenState extends State<ExecuteScreen> with SingleTickerProvider
                 Semantics(
                   label: 'Close task and return to home',
                   button: true,
+                  excludeSemantics: true,
                   child: SizedBox(
                     width: kMinTouchTarget,
                     height: kMinTouchTarget,
@@ -339,6 +349,7 @@ class _ExecuteScreenState extends State<ExecuteScreen> with SingleTickerProvider
                 Semantics(
                   label: 'Open body double focus mode',
                   button: true,
+                  excludeSemantics: true,
                   child: SizedBox(
                     width: kMinTouchTarget,
                     height: kMinTouchTarget,
@@ -357,6 +368,7 @@ class _ExecuteScreenState extends State<ExecuteScreen> with SingleTickerProvider
                 Semantics(
                   label: 'View full task plan',
                   button: true,
+                  excludeSemantics: true,
                   child: SizedBox(
                     width: kMinTouchTarget,
                     height: kMinTouchTarget,
@@ -369,17 +381,19 @@ class _ExecuteScreenState extends State<ExecuteScreen> with SingleTickerProvider
                 ),
               ],
             ),
-            
+
             const SizedBox(height: 16),
-            
+
             // Progress with accessibility
             Semantics(
-              label: 'Progress: ${(task.progress * 100).round()} percent complete. Step $stepNum of $totalSteps',
+              label:
+                  'Progress: ${(task.progress * 100).round()} percent complete. Step $stepNum of $totalSteps',
               child: Column(
                 children: [
                   LinearProgressIndicator(
                     value: task.progress,
-                    backgroundColor: Theme.of(context).colorScheme.primary.withOpacity(0.2),
+                    backgroundColor:
+                        Theme.of(context).colorScheme.primary.withOpacity(0.2),
                     minHeight: 8,
                     borderRadius: BorderRadius.circular(4),
                   ),
@@ -392,23 +406,24 @@ class _ExecuteScreenState extends State<ExecuteScreen> with SingleTickerProvider
                 ],
               ),
             ),
-            
+
             const Spacer(),
-            
+
             // Current step - big and prominent with semantics
             Semantics(
-              label: 'Current step: ${step.action}. Estimated time: ${step.estimatedMinutes} minutes',
+              label:
+                  'Current step: ${step.action}. Estimated time: ${step.estimatedMinutes} minutes',
               liveRegion: true,
               child: _buildStepCard(context, step, reduceAnimations),
             ),
-            
+
             const SizedBox(height: 24),
-            
+
             // Timer section
             _buildTimerSection(context, step),
-            
+
             const Spacer(),
-            
+
             // Action buttons with proper touch targets and semantics
             _buildActionButtons(context, provider),
             const SizedBox(height: 16),
@@ -417,8 +432,9 @@ class _ExecuteScreenState extends State<ExecuteScreen> with SingleTickerProvider
       ),
     );
   }
-  
-  Widget _buildStepCard(BuildContext context, TaskStep step, bool reduceAnimations) {
+
+  Widget _buildStepCard(
+      BuildContext context, TaskStep step, bool reduceAnimations) {
     final card = Container(
       padding: const EdgeInsets.all(32),
       decoration: BoxDecoration(
@@ -440,8 +456,11 @@ class _ExecuteScreenState extends State<ExecuteScreen> with SingleTickerProvider
             Text(
               step.action,
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
-              ),
+                    color: Theme.of(context)
+                        .colorScheme
+                        .onSurface
+                        .withValues(alpha: 0.6),
+                  ),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 8),
@@ -453,8 +472,8 @@ class _ExecuteScreenState extends State<ExecuteScreen> with SingleTickerProvider
               Text(
                 step.currentSubStep!.action,
                 style: Theme.of(context).textTheme.displaySmall?.copyWith(
-                  height: 1.3,
-                ),
+                      height: 1.3,
+                    ),
                 textAlign: TextAlign.left,
               )
             else
@@ -485,8 +504,8 @@ class _ExecuteScreenState extends State<ExecuteScreen> with SingleTickerProvider
             Text(
               step.action,
               style: Theme.of(context).textTheme.displaySmall?.copyWith(
-                height: 1.3, // Improved line spacing for dyslexia
-              ),
+                    height: 1.3, // Improved line spacing for dyslexia
+                  ),
               textAlign: TextAlign.left, // Left-align for readability
             ),
             const SizedBox(height: 16),
@@ -510,22 +529,23 @@ class _ExecuteScreenState extends State<ExecuteScreen> with SingleTickerProvider
         ],
       ),
     );
-    
+
     // Skip animations if reduced motion is preferred
     if (reduceAnimations) {
       return card;
     }
-    
+
     return card
-      .animate()
-      .fadeIn(duration: const Duration(milliseconds: 300))
-      .slideY(begin: 0.1, end: 0, duration: const Duration(milliseconds: 300));
+        .animate()
+        .fadeIn(duration: const Duration(milliseconds: 300))
+        .slideY(
+            begin: 0.1, end: 0, duration: const Duration(milliseconds: 300));
   }
-  
+
   Widget _buildSubStepProgress(BuildContext context, TaskStep step) {
     final total = step.subSteps!.length;
     final current = step.currentSubStepIndex + 1;
-    
+
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
@@ -538,8 +558,14 @@ class _ExecuteScreenState extends State<ExecuteScreen> with SingleTickerProvider
               color: i < step.currentSubStepIndex
                   ? Theme.of(context).colorScheme.primary
                   : i == step.currentSubStepIndex
-                      ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.5)
-                      : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.2),
+                      ? Theme.of(context)
+                          .colorScheme
+                          .primary
+                          .withValues(alpha: 0.5)
+                      : Theme.of(context)
+                          .colorScheme
+                          .onSurface
+                          .withValues(alpha: 0.2),
             ),
           ),
           if (i < total - 1) const SizedBox(width: 6),
@@ -548,14 +574,14 @@ class _ExecuteScreenState extends State<ExecuteScreen> with SingleTickerProvider
         Text(
           'Substep $current of $total',
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
-            color: Theme.of(context).colorScheme.primary,
-            fontWeight: FontWeight.w500,
-          ),
+                color: Theme.of(context).colorScheme.primary,
+                fontWeight: FontWeight.w500,
+              ),
         ),
       ],
     );
   }
-  
+
   Widget _buildActionButtons(BuildContext context, TaskProvider provider) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -564,6 +590,7 @@ class _ExecuteScreenState extends State<ExecuteScreen> with SingleTickerProvider
         Semantics(
           label: 'Mark step as done',
           button: true,
+          excludeSemantics: true,
           hint: 'Double tap to complete this step',
           child: SizedBox(
             height: max(kMinTouchTarget, 56), // Ensure minimum touch target
@@ -587,6 +614,7 @@ class _ExecuteScreenState extends State<ExecuteScreen> with SingleTickerProvider
               child: Semantics(
                 label: 'Skip this step',
                 button: true,
+                excludeSemantics: true,
                 hint: 'Double tap to skip to the next step',
                 child: SizedBox(
                   height: kMinTouchTarget,
@@ -602,17 +630,30 @@ class _ExecuteScreenState extends State<ExecuteScreen> with SingleTickerProvider
               child: Semantics(
                 label: "I'm stuck on this step",
                 button: true,
-                hint: 'Double tap for help breaking down this step into smaller parts',
+                excludeSemantics: true,
+                hint:
+                    'Double tap for help breaking down this step into smaller parts',
                 child: SizedBox(
                   height: kMinTouchTarget,
                   child: OutlinedButton(
                     // Disable if step already has substeps
-                    onPressed: provider.activeTask!.currentStep!.hasSubSteps 
-                        ? null 
-                        : () => _showStuckDialog(context, provider.activeTask!.currentStep!),
-                    child: Text(provider.activeTask!.currentStep!.hasSubSteps 
-                        ? 'Already broken down' 
-                        : AppStrings.imStuck),
+                    onPressed: provider.activeTask!.currentStep!.hasSubSteps
+                        ? null
+                        : () => _showStuckDialog(
+                            context, provider.activeTask!.currentStep!),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                    ),
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        provider.activeTask!.currentStep!.hasSubSteps
+                            ? 'Already broken down'
+                            : AppStrings.imStuck,
+                        maxLines: 1,
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -627,13 +668,13 @@ class _ExecuteScreenState extends State<ExecuteScreen> with SingleTickerProvider
     if (_timerRunning || _secondsRemaining > 0) {
       return _buildActiveTimer(context);
     }
-    
+
     return _buildTimerOptions(context, step);
   }
 
   Widget _buildTimerOptions(BuildContext context, TaskStep step) {
     final options = [5, 10, 15, 25];
-    
+
     return Semantics(
       label: 'Optional timer. Choose a duration to set a focus timer.',
       child: Column(
@@ -647,26 +688,29 @@ class _ExecuteScreenState extends State<ExecuteScreen> with SingleTickerProvider
             alignment: WrapAlignment.center,
             spacing: 8,
             runSpacing: 8,
-            children: options.map((mins) => Semantics(
-              label: '$mins minute timer',
-              button: true,
-              selected: _selectedMinutes == mins,
-              child: SizedBox(
-                height: kMinTouchTarget,
-                child: ChoiceChip(
-                  label: Text('$mins min'),
-                  selected: _selectedMinutes == mins,
-                  onSelected: (selected) {
-                    setState(() {
-                      _selectedMinutes = selected ? mins : null;
-                    });
-                    if (selected) {
-                      _startTimer(mins);
-                    }
-                  },
-                ),
-              ),
-            )).toList(),
+            children: options
+                .map((mins) => Semantics(
+                      label: '$mins minute timer',
+                      button: true,
+                      excludeSemantics: true,
+                      selected: _selectedMinutes == mins,
+                      child: SizedBox(
+                        height: kMinTouchTarget,
+                        child: ChoiceChip(
+                          label: Text('$mins min'),
+                          selected: _selectedMinutes == mins,
+                          onSelected: (selected) {
+                            setState(() {
+                              _selectedMinutes = selected ? mins : null;
+                            });
+                            if (selected) {
+                              _startTimer(mins);
+                            }
+                          },
+                        ),
+                      ),
+                    ))
+                .toList(),
           ),
         ],
       ),
@@ -676,8 +720,9 @@ class _ExecuteScreenState extends State<ExecuteScreen> with SingleTickerProvider
   Widget _buildActiveTimer(BuildContext context) {
     final minutes = _secondsRemaining ~/ 60;
     final seconds = _secondsRemaining % 60;
-    final timeString = '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
-    
+    final timeString =
+        '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+
     return Semantics(
       label: 'Timer: $minutes minutes and $seconds seconds remaining',
       liveRegion: true,
@@ -686,9 +731,9 @@ class _ExecuteScreenState extends State<ExecuteScreen> with SingleTickerProvider
           Text(
             timeString,
             style: Theme.of(context).textTheme.displayLarge?.copyWith(
-              fontWeight: FontWeight.w300,
-              color: Theme.of(context).colorScheme.primary,
-            ),
+                  fontWeight: FontWeight.w300,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
           ),
           const SizedBox(height: 12),
           Semantics(
@@ -698,7 +743,8 @@ class _ExecuteScreenState extends State<ExecuteScreen> with SingleTickerProvider
               height: kMinTouchTarget,
               child: TextButton(
                 onPressed: _toggleTimer,
-                child: Text(_timerRunning ? AppStrings.pause : AppStrings.resume),
+                child:
+                    Text(_timerRunning ? AppStrings.pause : AppStrings.resume),
               ),
             ),
           ),
@@ -712,7 +758,7 @@ class _ExecuteScreenState extends State<ExecuteScreen> with SingleTickerProvider
       _secondsRemaining = minutes * 60;
       _timerRunning = true;
     });
-    
+
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (_secondsRemaining > 0 && _timerRunning) {
         setState(() {
@@ -737,75 +783,86 @@ class _ExecuteScreenState extends State<ExecuteScreen> with SingleTickerProvider
 
   void _completeStep(TaskProvider provider) {
     final reduceAnimations = _shouldReduceAnimations(context);
-    
+
     if (provider.hapticEnabled) {
       HapticFeedback.mediumImpact();
     }
-    
+
     if (_shouldShowConfetti(context)) {
       _confettiController.play();
     }
-    
+
     if (provider.soundEnabled) {
       _soundService.playStepComplete();
     }
-    
-    // Record timer usage if a timer was active
-    if (_selectedMinutes != null) {
-      final minutesUsed = _selectedMinutes! - (_secondsRemaining ~/ 60);
-      if (minutesUsed > 0) {
-        provider.recordTimerUsage(minutesUsed);
-      }
-    }
-    
+
     // Use coach-specific completion message
     final coach = provider.selectedCoach;
     final message = coach.getRandomCompletionMessage();
-    
+
     // Announce completion for screen readers
     SemanticsService.announce('Step completed! $message', TextDirection.ltr);
-    
+
     // Check if auto-advance is enabled
     final autoAdvance = provider.autoAdvanceEnabled;
-    
+
     if (reduceAnimations || !autoAdvance) {
       // Skip celebration overlay, advance immediately
-      provider.completeCurrentStep();
-      _timer?.cancel();
-      _secondsRemaining = 0;
-      _timerRunning = false;
-      _selectedMinutes = null;
+      final advancedToNextStep = _completeCurrentStep(provider);
+      if (advancedToNextStep) {
+        _recordAndResetFocusTimer(provider);
+      }
       _startStepTimer(); // Reset step timer for next step
     } else {
       setState(() {
         _showCelebration = true;
         _celebrationMessage = message;
       });
-      
+
       Future.delayed(const Duration(milliseconds: 1200), () {
         if (mounted) {
           setState(() {
             _showCelebration = false;
           });
-          provider.completeCurrentStep();
-          _timer?.cancel();
-          _secondsRemaining = 0;
-          _timerRunning = false;
-          _selectedMinutes = null;
+          final advancedToNextStep = _completeCurrentStep(provider);
+          if (advancedToNextStep) {
+            _recordAndResetFocusTimer(provider);
+          }
           _startStepTimer(); // Reset step timer for next step
         }
       });
     }
   }
 
+  bool _completeCurrentStep(TaskProvider provider) {
+    final task = provider.activeTask;
+    final previousStepIndex = task?.currentStepIndex;
+    provider.completeCurrentStep();
+    return task == null || task.currentStepIndex != previousStepIndex;
+  }
+
+  void _recordAndResetFocusTimer(TaskProvider provider) {
+    if (_selectedMinutes != null) {
+      final minutesUsed = _selectedMinutes! - (_secondsRemaining ~/ 60);
+      if (minutesUsed > 0) {
+        provider.recordTimerUsage(minutesUsed);
+      }
+    }
+
+    _timer?.cancel();
+    _secondsRemaining = 0;
+    _timerRunning = false;
+    _selectedMinutes = null;
+  }
+
   void _skipStep(TaskProvider provider) {
     if (provider.hapticEnabled) {
       HapticFeedback.lightImpact();
     }
-    
+
     // Announce skip for screen readers
     SemanticsService.announce('Step skipped', TextDirection.ltr);
-    
+
     provider.skipCurrentStep();
     _timer?.cancel();
     setState(() {
@@ -818,7 +875,7 @@ class _ExecuteScreenState extends State<ExecuteScreen> with SingleTickerProvider
 
   Widget _buildCelebrationOverlay(BuildContext context) {
     final reduceAnimations = _shouldReduceAnimations(context);
-    
+
     final content = Container(
       padding: const EdgeInsets.symmetric(horizontal: 48, vertical: 24),
       decoration: BoxDecoration(
@@ -828,11 +885,11 @@ class _ExecuteScreenState extends State<ExecuteScreen> with SingleTickerProvider
       child: Text(
         _celebrationMessage ?? 'Nice!',
         style: Theme.of(context).textTheme.displaySmall?.copyWith(
-          color: Theme.of(context).colorScheme.primary,
-        ),
+              color: Theme.of(context).colorScheme.primary,
+            ),
       ),
     );
-    
+
     return Semantics(
       label: 'Celebration: ${_celebrationMessage ?? 'Nice!'}',
       liveRegion: true,
@@ -841,9 +898,10 @@ class _ExecuteScreenState extends State<ExecuteScreen> with SingleTickerProvider
         child: Center(
           child: reduceAnimations
               ? content
-              : content
-                  .animate()
-                  .scale(begin: const Offset(0.8, 0.8), end: const Offset(1.0, 1.0), duration: const Duration(milliseconds: 200)),
+              : content.animate().scale(
+                  begin: const Offset(0.8, 0.8),
+                  end: const Offset(1.0, 1.0),
+                  duration: const Duration(milliseconds: 200)),
         ),
       ),
     );
@@ -852,27 +910,29 @@ class _ExecuteScreenState extends State<ExecuteScreen> with SingleTickerProvider
   Widget _buildCompletionScreen(BuildContext context, Task task) {
     final provider = context.read<TaskProvider>();
     final coach = provider.selectedCoach;
-    
+
     // Play confetti on first build
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_hasTriggeredCompletion) {
         _hasTriggeredCompletion = true;
-        
+
         if (_shouldShowConfetti(context)) {
           _confettiController.play();
         }
-        
+
         if (provider.hapticEnabled) {
           HapticFeedback.heavyImpact();
         }
-        
+
         if (provider.soundEnabled) {
-          _soundService.playTaskComplete();
+          _soundService.playTaskComplete(
+            soundId: provider.selectedCelebrationSound,
+          );
         }
-        
+
         // Track task completion and check for rate prompt
         _onTaskCompleted(context, task);
-        
+
         // Announce completion for screen readers
         SemanticsService.announce(
           'Congratulations! You completed ${task.title}. ${task.completedStepsCount} steps done.',
@@ -910,13 +970,14 @@ class _ExecuteScreenState extends State<ExecuteScreen> with SingleTickerProvider
             Text(
               coach.getRandomCompletionMessage(),
               style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                height: 1.5, // Improved line spacing
-              ),
+                    height: 1.5, // Improved line spacing
+                  ),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 32),
             Semantics(
-              label: 'Task summary: ${task.title}. ${task.completedStepsCount} steps completed, ${task.steps.where((s) => s.isSkipped).length} steps skipped.',
+              label:
+                  'Task summary: ${task.title}. ${task.completedStepsCount} steps completed, ${task.steps.where((s) => s.isSkipped).length} steps skipped.',
               child: Container(
                 padding: const EdgeInsets.all(24),
                 decoration: BoxDecoration(
@@ -967,7 +1028,8 @@ class _ExecuteScreenState extends State<ExecuteScreen> with SingleTickerProvider
                         icon: const Icon(Icons.share),
                         label: const Text('Share'),
                         style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 12),
                         ),
                       ),
                     ),
@@ -989,7 +1051,8 @@ class _ExecuteScreenState extends State<ExecuteScreen> with SingleTickerProvider
                   icon: const Icon(Icons.repeat),
                   label: const Text('Save as Routine'),
                   style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 12),
                   ),
                 ),
               ),
@@ -1013,19 +1076,19 @@ class _ExecuteScreenState extends State<ExecuteScreen> with SingleTickerProvider
       ),
     );
   }
-  
+
   void _onTaskCompleted(BuildContext context, Task task) {
     final settings = context.read<SettingsService>();
-    
+
     // Track analytics
     AnalyticsService.trackTaskCompleted(task);
-    
+
     // Call the completion callback (used for routines)
     widget.onTaskComplete?.call();
-    
+
     // Check for rate prompt
     settings.incrementTasksSinceLastAsk();
-    
+
     // Small delay before showing rate dialog to not interrupt celebration
     if (settings.shouldShowRatePrompt) {
       Future.delayed(const Duration(milliseconds: 2000), () {
@@ -1040,7 +1103,7 @@ class _ExecuteScreenState extends State<ExecuteScreen> with SingleTickerProvider
       });
     }
   }
-  
+
   void _showShareCard(BuildContext context, Task task) {
     showModalBottomSheet(
       context: context,
@@ -1088,7 +1151,8 @@ class _ExecuteScreenState extends State<ExecuteScreen> with SingleTickerProvider
                     Navigator.pop(ctx);
                     await ShareService.captureAndShare(
                       key: _shareCardKey,
-                      shareText: 'I just completed "${task.title}" using Tiny Steps! 🎉 #TinySteps #ProductivityWin',
+                      shareText:
+                          'I just completed "${task.title}" using Tiny Steps! 🎉 #TinySteps #ProductivityWin',
                       subject: 'My Tiny Steps Achievement',
                     );
                     // Track the share
@@ -1097,7 +1161,8 @@ class _ExecuteScreenState extends State<ExecuteScreen> with SingleTickerProvider
                   icon: const Icon(Icons.share),
                   label: const Text('Share'),
                   style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 32, vertical: 16),
                   ),
                 ),
               ),
@@ -1108,10 +1173,10 @@ class _ExecuteScreenState extends State<ExecuteScreen> with SingleTickerProvider
       ),
     );
   }
-  
+
   void _showTimeSlotPicker(BuildContext context, Task task) {
     final calendarService = context.read<CalendarService>();
-    
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -1120,7 +1185,8 @@ class _ExecuteScreenState extends State<ExecuteScreen> with SingleTickerProvider
         task: task,
         calendarService: calendarService,
         onTimeSelected: (startTime) async {
-          final eventId = await calendarService.createTimeBlock(task, startTime);
+          final eventId =
+              await calendarService.createTimeBlock(task, startTime);
           if (mounted) {
             if (eventId != null) {
               ScaffoldMessenger.of(context).showSnackBar(
@@ -1133,11 +1199,13 @@ class _ExecuteScreenState extends State<ExecuteScreen> with SingleTickerProvider
                   ),
                 ),
               );
-              SemanticsService.announce('Task added to calendar', TextDirection.ltr);
+              SemanticsService.announce(
+                  'Task added to calendar', TextDirection.ltr);
             } else {
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
-                  content: Text('Could not add to calendar. Check permissions.'),
+                  content:
+                      Text('Could not add to calendar. Check permissions.'),
                   behavior: SnackBarBehavior.floating,
                 ),
               );
@@ -1148,7 +1216,8 @@ class _ExecuteScreenState extends State<ExecuteScreen> with SingleTickerProvider
           Navigator.pop(ctx);
           final slot = await calendarService.findNextAvailableHour();
           if (slot != null) {
-            final eventId = await calendarService.createTimeBlock(task, slot.start);
+            final eventId =
+                await calendarService.createTimeBlock(task, slot.start);
             if (mounted) {
               if (eventId != null) {
                 ScaffoldMessenger.of(context).showSnackBar(
@@ -1164,7 +1233,7 @@ class _ExecuteScreenState extends State<ExecuteScreen> with SingleTickerProvider
       ),
     );
   }
-  
+
   void _saveAsRoutine(BuildContext context, Task task) {
     Navigator.of(context).push(
       MaterialPageRoute(
@@ -1181,8 +1250,8 @@ class _ExecuteScreenState extends State<ExecuteScreen> with SingleTickerProvider
           Text(
             value,
             style: Theme.of(context).textTheme.displaySmall?.copyWith(
-              color: Theme.of(context).colorScheme.primary,
-            ),
+                  color: Theme.of(context).colorScheme.primary,
+                ),
           ),
           Text(
             label,
@@ -1230,7 +1299,7 @@ class _ExecuteScreenState extends State<ExecuteScreen> with SingleTickerProvider
   void _showStuckDialog(BuildContext context, TaskStep step) {
     final provider = context.read<TaskProvider>();
     final coach = provider.selectedCoach;
-    
+
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
@@ -1323,7 +1392,7 @@ class _ExecuteScreenState extends State<ExecuteScreen> with SingleTickerProvider
       ),
     );
   }
-  
+
   void _showTaskPlan(BuildContext context, Task task) {
     showModalBottomSheet(
       context: context,
@@ -1342,7 +1411,10 @@ class _ExecuteScreenState extends State<ExecuteScreen> with SingleTickerProvider
               width: 40,
               height: 4,
               decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3),
+                color: Theme.of(context)
+                    .colorScheme
+                    .onSurface
+                    .withValues(alpha: 0.3),
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -1355,8 +1427,8 @@ class _ExecuteScreenState extends State<ExecuteScreen> with SingleTickerProvider
                     child: Text(
                       task.title,
                       style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
+                            fontWeight: FontWeight.bold,
+                          ),
                     ),
                   ),
                   IconButton(
@@ -1371,18 +1443,19 @@ class _ExecuteScreenState extends State<ExecuteScreen> with SingleTickerProvider
             Expanded(
               child: ListView.builder(
                 controller: scrollController,
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 itemCount: task.steps.length,
                 itemBuilder: (_, index) {
                   final step = task.steps[index];
                   final isCurrent = index == task.currentStepIndex;
                   final isCompleted = step.isCompleted;
                   final isSkipped = step.isSkipped;
-                  
+
                   return _buildPlanStepTile(
-                    context, 
-                    step, 
-                    index, 
+                    context,
+                    step,
+                    index,
                     isCurrent: isCurrent,
                     isCompleted: isCompleted,
                     isSkipped: isSkipped,
@@ -1395,27 +1468,26 @@ class _ExecuteScreenState extends State<ExecuteScreen> with SingleTickerProvider
       ),
     );
   }
-  
+
   Widget _buildPlanStepTile(
-    BuildContext context, 
-    TaskStep step, 
+    BuildContext context,
+    TaskStep step,
     int index, {
     required bool isCurrent,
     required bool isCompleted,
     required bool isSkipped,
   }) {
     final colorScheme = Theme.of(context).colorScheme;
-    
+
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
-        color: isCurrent 
-            ? colorScheme.primaryContainer 
+        color: isCurrent
+            ? colorScheme.primaryContainer
             : colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
         borderRadius: BorderRadius.circular(12),
-        border: isCurrent 
-            ? Border.all(color: colorScheme.primary, width: 2)
-            : null,
+        border:
+            isCurrent ? Border.all(color: colorScheme.primary, width: 2) : null,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1431,7 +1503,7 @@ class _ExecuteScreenState extends State<ExecuteScreen> with SingleTickerProvider
                   width: 28,
                   height: 28,
                   decoration: BoxDecoration(
-                    color: isCompleted 
+                    color: isCompleted
                         ? colorScheme.primary
                         : isSkipped
                             ? colorScheme.outline
@@ -1442,17 +1514,22 @@ class _ExecuteScreenState extends State<ExecuteScreen> with SingleTickerProvider
                   ),
                   child: Center(
                     child: isCompleted
-                        ? Icon(Icons.check, size: 16, color: colorScheme.onPrimary)
+                        ? Icon(Icons.check,
+                            size: 16, color: colorScheme.onPrimary)
                         : isSkipped
-                            ? Icon(Icons.skip_next, size: 16, color: colorScheme.onInverseSurface)
+                            ? Icon(Icons.skip_next,
+                                size: 16, color: colorScheme.onInverseSurface)
                             : Text(
                                 '${index + 1}',
-                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                  fontWeight: FontWeight.bold,
-                                  color: isCurrent 
-                                      ? colorScheme.primary 
-                                      : colorScheme.onSurface,
-                                ),
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodySmall
+                                    ?.copyWith(
+                                      fontWeight: FontWeight.bold,
+                                      color: isCurrent
+                                          ? colorScheme.primary
+                                          : colorScheme.onSurface,
+                                    ),
                               ),
                   ),
                 ),
@@ -1465,30 +1542,36 @@ class _ExecuteScreenState extends State<ExecuteScreen> with SingleTickerProvider
                       Text(
                         step.action,
                         style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                          fontWeight: isCurrent ? FontWeight.w600 : FontWeight.normal,
-                          color: isSkipped 
-                              ? colorScheme.onSurface.withValues(alpha: 0.5)
-                              : isCurrent
-                                  ? colorScheme.onPrimaryContainer
-                                  : null,
-                          decoration: isSkipped ? TextDecoration.lineThrough : null,
-                        ),
+                              fontWeight: isCurrent
+                                  ? FontWeight.w600
+                                  : FontWeight.normal,
+                              color: isSkipped
+                                  ? colorScheme.onSurface.withValues(alpha: 0.5)
+                                  : isCurrent
+                                      ? colorScheme.onPrimaryContainer
+                                      : null,
+                              decoration:
+                                  isSkipped ? TextDecoration.lineThrough : null,
+                            ),
                       ),
                       const SizedBox(height: 2),
                       Text(
                         '~${step.estimatedMinutes} min',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: isCurrent 
-                              ? colorScheme.onPrimaryContainer.withValues(alpha: 0.7)
-                              : colorScheme.onSurface.withValues(alpha: 0.6),
-                        ),
+                              color: isCurrent
+                                  ? colorScheme.onPrimaryContainer
+                                      .withValues(alpha: 0.7)
+                                  : colorScheme.onSurface
+                                      .withValues(alpha: 0.6),
+                            ),
                       ),
                     ],
                   ),
                 ),
                 if (isCurrent)
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
                       color: colorScheme.primary,
                       borderRadius: BorderRadius.circular(12),
@@ -1496,9 +1579,9 @@ class _ExecuteScreenState extends State<ExecuteScreen> with SingleTickerProvider
                     child: Text(
                       'NOW',
                       style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: colorScheme.onPrimary,
-                        fontWeight: FontWeight.bold,
-                      ),
+                            color: colorScheme.onPrimary,
+                            fontWeight: FontWeight.bold,
+                          ),
                     ),
                   ),
               ],
@@ -1512,19 +1595,22 @@ class _ExecuteScreenState extends State<ExecuteScreen> with SingleTickerProvider
                 children: step.subSteps!.asMap().entries.map((entry) {
                   final subIndex = entry.key;
                   final subStep = entry.value;
-                  final isCurrentSub = isCurrent && subIndex == step.currentSubStepIndex;
+                  final isCurrentSub =
+                      isCurrent && subIndex == step.currentSubStepIndex;
                   final isSubCompleted = subStep.isCompleted;
-                  
+
                   return Container(
                     margin: const EdgeInsets.only(top: 6),
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                     decoration: BoxDecoration(
                       color: isCurrentSub
                           ? colorScheme.primary.withValues(alpha: 0.15)
                           : colorScheme.surface.withValues(alpha: 0.8),
                       borderRadius: BorderRadius.circular(8),
-                      border: isCurrentSub 
-                          ? Border.all(color: colorScheme.primary.withValues(alpha: 0.5))
+                      border: isCurrentSub
+                          ? Border.all(
+                              color: colorScheme.primary.withValues(alpha: 0.5))
                           : null,
                     ),
                     child: Row(
@@ -1541,12 +1627,16 @@ class _ExecuteScreenState extends State<ExecuteScreen> with SingleTickerProvider
                           ),
                           child: Center(
                             child: isSubCompleted
-                                ? Icon(Icons.check, size: 12, color: colorScheme.onPrimary)
+                                ? Icon(Icons.check,
+                                    size: 12, color: colorScheme.onPrimary)
                                 : Text(
                                     '${subIndex + 1}',
-                                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                                      fontSize: 10,
-                                    ),
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .labelSmall
+                                        ?.copyWith(
+                                          fontSize: 10,
+                                        ),
                                   ),
                           ),
                         ),
@@ -1554,16 +1644,23 @@ class _ExecuteScreenState extends State<ExecuteScreen> with SingleTickerProvider
                         Expanded(
                           child: Text(
                             subStep.action,
-                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              fontWeight: isCurrentSub ? FontWeight.w500 : FontWeight.normal,
-                            ),
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodyMedium
+                                ?.copyWith(
+                                  fontWeight: isCurrentSub
+                                      ? FontWeight.w500
+                                      : FontWeight.normal,
+                                ),
                           ),
                         ),
                         Text(
                           '~${subStep.estimatedMinutes}m',
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: colorScheme.onSurface.withValues(alpha: 0.5),
-                          ),
+                          style:
+                              Theme.of(context).textTheme.bodySmall?.copyWith(
+                                    color: colorScheme.onSurface
+                                        .withValues(alpha: 0.5),
+                                  ),
                         ),
                       ],
                     ),
@@ -1576,10 +1673,10 @@ class _ExecuteScreenState extends State<ExecuteScreen> with SingleTickerProvider
       ),
     );
   }
-  
+
   void _breakDownStep(BuildContext context, TaskStep step) async {
     final provider = context.read<TaskProvider>();
-    
+
     // Show loading dialog
     showDialog(
       context: context,
@@ -1598,20 +1695,20 @@ class _ExecuteScreenState extends State<ExecuteScreen> with SingleTickerProvider
         ),
       ),
     );
-    
+
     try {
       // Call the provider to break down the current step
       final success = await provider.breakDownCurrentStep();
-      
+
       if (mounted) {
         Navigator.pop(context); // Close loading dialog
-        
+
         if (!success) {
           // User hit the free limit - show upgrade prompt
           _showBreakdownLimitDialog(context);
           return;
         }
-        
+
         // Show success feedback
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -1619,12 +1716,13 @@ class _ExecuteScreenState extends State<ExecuteScreen> with SingleTickerProvider
             behavior: SnackBarBehavior.floating,
           ),
         );
-        SemanticsService.announce('Step broken down into smaller pieces', TextDirection.ltr);
+        SemanticsService.announce(
+            'Step broken down into smaller pieces', TextDirection.ltr);
       }
     } catch (e) {
       if (mounted) {
         Navigator.pop(context); // Close loading dialog
-        
+
         // Show error
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -1635,7 +1733,7 @@ class _ExecuteScreenState extends State<ExecuteScreen> with SingleTickerProvider
       }
     }
   }
-  
+
   void _showBreakdownLimitDialog(BuildContext context) {
     showDialog(
       context: context,
@@ -1663,11 +1761,11 @@ class _ExecuteScreenState extends State<ExecuteScreen> with SingleTickerProvider
       ),
     );
   }
-  
+
   void _showQuickStarterSteps(BuildContext context, TaskStep step) {
     final provider = context.read<TaskProvider>();
     final coach = provider.selectedCoach;
-    
+
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
@@ -1701,7 +1799,8 @@ class _ExecuteScreenState extends State<ExecuteScreen> with SingleTickerProvider
                   _buildMiniStep(context, '1. Take a deep breath'),
                   _buildMiniStep(context, '2. Stand up and stretch'),
                   _buildMiniStep(context, '3. Walk to where you need to be'),
-                  _buildMiniStep(context, '4. Touch one thing related to the task'),
+                  _buildMiniStep(
+                      context, '4. Touch one thing related to the task'),
                 ],
               ),
             ),
@@ -1748,8 +1847,8 @@ class _ExecuteScreenState extends State<ExecuteScreen> with SingleTickerProvider
             child: Text(
               text,
               style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                height: 1.4, // Better line spacing
-              ),
+                    height: 1.4, // Better line spacing
+                  ),
             ),
           ),
         ],

@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import '../models/task.dart';
 
 /// Analytics service for tracking user events
 /// Currently a stub implementation - uses debugPrint (stripped in release)
@@ -35,7 +36,7 @@ class AnalyticsService {
   // Convenience methods for common events (static for ease of use)
   
   /// Track task completion
-  static void trackTaskCompleted(dynamic task) {
+  static void trackTaskCompleted(Task task) {
     _instance.trackEvent('task_completed', {
       'steps_completed': task.completedStepsCount,
       'steps_skipped': task.steps.where((s) => s.isSkipped).length,

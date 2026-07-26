@@ -64,9 +64,12 @@ class ScreenshotTests: XCTestCase {
             app.navigationBars.buttons.element(boundBy: 0).tap()
         }
         
-        // 5. Stats screen
-        if app.buttons["Stats"].exists || app.images["bar_chart_rounded"].exists {
-            app.buttons["Stats"].firstMatch.tap()
+        // 5. Progress screen
+        let progressBadge = app.buttons.matching(
+            NSPredicate(format: "label BEGINSWITH 'Level ' AND label CONTAINS 'Tap to view progress'")
+        ).firstMatch
+        if progressBadge.exists {
+            progressBadge.tap()
             sleep(1)
             snapshot("08_Stats")
             app.navigationBars.buttons.element(boundBy: 0).tap()

@@ -25,67 +25,68 @@ import 'presentation/screens/routines_screen.dart';
 import 'presentation/screens/body_double_screen.dart';
 
 // Global navigator key for deep linking
-final GlobalKey<NavigatorState> globalNavigatorKey = GlobalKey<NavigatorState>();
+final GlobalKey<NavigatorState> globalNavigatorKey =
+    GlobalKey<NavigatorState>();
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
+
   // Initialize Hive for local storage
   await Hive.initFlutter();
-  
+
   // Initialize settings
   final settings = SettingsService();
   await settings.initialize();
-  
+
   // Initialize theme provider
   final themeProvider = ThemeProvider();
   await themeProvider.initialize();
-  
+
   // Initialize stats
   final stats = StatsService();
   await stats.initialize();
-  
+
   // Initialize achievements
   final achievements = AchievementsService();
   await achievements.initialize(stats);
-  
+
   // Initialize widget service
   await WidgetService.initialize();
-  
+
   // Initialize notifications
   final notifications = NotificationService();
   await notifications.initialize();
-  
+
   // Initialize analytics (stub for now)
   final analytics = AnalyticsService();
   await analytics.initialize();
-  
+
   // Initialize calendar service
   final calendar = CalendarService();
   await calendar.initialize();
-  
+
   // Initialize routines service
   final routines = RoutineService();
   await routines.initialize();
-  
+
   // Initialize purchase service
   final purchases = PurchaseService();
   await purchases.initialize();
-  
+
   // Initialize Siri Shortcuts service
   final siri = SiriService();
   await siri.initialize();
-  
+
   // Initialize XP service
   final xpService = XPService();
   await xpService.initialize();
-  
+
   // Set preferred orientations
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
     DeviceOrientation.portraitDown,
   ]);
-  
+
   runApp(ADHDDecomposerApp(
     settings: settings,
     stats: stats,
@@ -109,7 +110,7 @@ class ADHDDecomposerApp extends StatefulWidget {
   final PurchaseService purchases;
   final XPService xpService;
   final ThemeProvider themeProvider;
-  
+
   const ADHDDecomposerApp({
     super.key,
     required this.settings,
@@ -129,7 +130,7 @@ class ADHDDecomposerApp extends StatefulWidget {
 
 class _ADHDDecomposerAppState extends State<ADHDDecomposerApp> {
   late bool _showOnboarding;
-  
+
   @override
   void initState() {
     super.initState();
@@ -139,32 +140,32 @@ class _ADHDDecomposerAppState extends State<ADHDDecomposerApp> {
     _setupNotificationHandling();
     _setupSiriHandlers();
   }
-  
+
   /// Set up Siri Shortcuts navigation handlers
   void _setupSiriHandlers() {
     final siri = SiriService();
-    
+
     // Start new task - navigate to decompose screen
     siri.onStartNewTask = () {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _navigateToRoute('decompose');
       });
     };
-    
+
     // Continue task - navigate to execute screen
     siri.onContinueTask = () {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _navigateToRoute('execute');
       });
     };
-    
+
     // Show progress - navigate to stats screen
     siri.onShowProgress = () {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _navigateToRoute('stats');
       });
     };
-    
+
     // Start routine - navigate to routines and try to start the named routine
     siri.onStartRoutine = (routineName) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -172,21 +173,21 @@ class _ADHDDecomposerAppState extends State<ADHDDecomposerApp> {
       });
     };
   }
-  
+
   /// Navigate to a specific routine by name
   void _navigateToRoutine(String routineName) {
     final context = globalNavigatorKey.currentContext;
     if (context == null) return;
-    
+
     // First navigate to routines screen
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const RoutinesScreen()),
     );
-    
+
     // TODO: In future, could auto-start the routine matching the name
     // For MVP, just navigate to the routines screen
   }
-  
+
   Future<void> _handleWidgetLaunch() async {
     final uri = await WidgetService.getInitialUri();
     if (uri != null) {
@@ -196,7 +197,7 @@ class _ADHDDecomposerAppState extends State<ADHDDecomposerApp> {
       });
     }
   }
-  
+
   void _listenToWidgetClicks() {
     WidgetService.widgetClicked.listen((uri) {
       if (uri != null && mounted) {
@@ -204,7 +205,7 @@ class _ADHDDecomposerAppState extends State<ADHDDecomposerApp> {
       }
     });
   }
-  
+
   void _setupNotificationHandling() {
     // Set up notification tap callback
     NotificationService.onNotificationTap = (payload) {
@@ -216,22 +217,22 @@ class _ADHDDecomposerAppState extends State<ADHDDecomposerApp> {
       }
     };
   }
-  
+
   void _handleNotificationNavigation(String payload) {
     final context = globalNavigatorKey.currentContext;
     if (context == null) return;
-    
+
     switch (payload) {
       case NotificationService.payloadHome:
         // Navigate to home (pop all routes)
         Navigator.of(context).popUntil((route) => route.isFirst);
         break;
-        
+
       case NotificationService.payloadExecute:
         // Navigate to execute screen
         _navigateToRoute('execute');
         break;
-        
+
       case NotificationService.payloadStats:
         // Navigate to stats screen
         Navigator.of(context).push(
@@ -240,11 +241,11 @@ class _ADHDDecomposerAppState extends State<ADHDDecomposerApp> {
         break;
     }
   }
-  
+
   void _navigateToRoute(String route) {
     final context = globalNavigatorKey.currentContext;
     if (context == null) return;
-    
+
     switch (route) {
       case 'decompose':
         Navigator.of(context).push(
@@ -284,7 +285,7 @@ class _ADHDDecomposerAppState extends State<ADHDDecomposerApp> {
         break;
     }
   }
-  
+
   void _completeOnboarding() {
     setState(() {
       _showOnboarding = false;
@@ -315,14 +316,14 @@ class _ADHDDecomposerAppState extends State<ADHDDecomposerApp> {
         ChangeNotifierProvider.value(value: widget.xpService),
         ChangeNotifierProvider.value(value: widget.themeProvider),
       ],
-      child: Consumer<ThemeProvider>(
-        builder: (context, themeProvider, _) {
+      child: Consumer2<ThemeProvider, XPService>(
+        builder: (context, themeProvider, xpService, _) {
           return MaterialApp(
             title: 'Tiny Steps',
             navigatorKey: globalNavigatorKey,
             debugShowCheckedModeBanner: false,
-            theme: AppTheme.lightTheme,
-            darkTheme: AppTheme.darkTheme,
+            theme: AppTheme.lightThemeFor(xpService.selectedTheme),
+            darkTheme: AppTheme.darkThemeFor(xpService.selectedTheme),
             themeMode: themeProvider.themeMode,
             home: _showOnboarding
                 ? OnboardingScreen(onComplete: _completeOnboarding)

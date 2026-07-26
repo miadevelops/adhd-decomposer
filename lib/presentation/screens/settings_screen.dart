@@ -5,11 +5,14 @@ import 'package:device_calendar/device_calendar.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../providers/task_provider.dart';
 import '../providers/theme_provider.dart';
+import '../../data/models/player_profile.dart';
 import '../../data/services/calendar_service.dart';
+import '../../data/services/xp_service.dart';
 import 'paywall_screen.dart';
 import 'feedback_screen.dart';
 import 'coach_selector_screen.dart';
 import 'debug_screen.dart';
+import 'personalization_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -26,9 +29,8 @@ class SettingsScreen extends StatelessWidget {
             padding: const EdgeInsets.symmetric(vertical: 8),
             children: [
               // Premium status
-              if (!provider.isPremium)
-                _buildUpgradeBanner(context, provider),
-                
+              if (!provider.isPremium) _buildUpgradeBanner(context, provider),
+
               _buildSectionHeader(context, 'Notifications'),
               _buildNotificationToggle(context, provider),
               if (provider.notificationsEnabled) ...[
@@ -43,7 +45,7 @@ class SettingsScreen extends StatelessWidget {
                 ),
                 _buildTestNotificationTile(context, provider),
               ],
-                
+
               const Divider(height: 32),
               _buildSectionHeader(context, 'Feedback'),
               _buildSwitchTile(
@@ -76,9 +78,10 @@ class SettingsScreen extends StatelessWidget {
                 title: 'Celebration Sounds',
                 subtitle: 'Play sounds when completing tasks',
                 value: provider.celebrationSoundEnabled,
-                onChanged: (value) => provider.setCelebrationSoundEnabled(value),
+                onChanged: (value) =>
+                    provider.setCelebrationSoundEnabled(value),
               ),
-              
+
               const Divider(height: 32),
               _buildSectionHeader(context, 'Accessibility'),
               _buildSwitchTile(
@@ -97,34 +100,35 @@ class SettingsScreen extends StatelessWidget {
                 value: provider.autoAdvanceEnabled,
                 onChanged: (value) => provider.setAutoAdvanceEnabled(value),
               ),
-              
+
               const Divider(height: 32),
               _buildSectionHeader(context, 'Appearance'),
               _buildThemeSelector(context),
-              
+
               // Calendar integration hidden for v1 - see GitHub issue #5
               // const Divider(height: 32),
               // _buildSectionHeader(context, 'Calendar'),
               // _buildCalendarSettings(context),
-              
+
               const Divider(height: 32),
               _buildSectionHeader(context, 'Personalization'),
+              _buildRewardPersonalizationTile(context),
               _buildNameTile(context, provider),
               _buildCoachSelectorTile(context, provider),
-              
+
               const Divider(height: 32),
               _buildSectionHeader(context, 'AI Decomposition'),
               _buildDecompositionStyleTile(context, provider),
-              
+
               const Divider(height: 32),
               _buildSectionHeader(context, 'Body Double'),
               _buildDefaultAmbientSoundTile(context, provider),
-              
+
               // BYOK hidden for v1 - see GitHub issue for v2 roadmap
               // const Divider(height: 32),
               // _buildSectionHeader(context, 'Power User'),
               // _buildApiKeyTile(context, provider),
-              
+
               const Divider(height: 32),
               _buildSectionHeader(context, 'Support'),
               ListTile(
@@ -136,7 +140,7 @@ class SettingsScreen extends StatelessWidget {
                   MaterialPageRoute(builder: (_) => const FeedbackScreen()),
                 ),
               ),
-              
+
               const Divider(height: 32),
               _buildSectionHeader(context, 'Data'),
               ListTile(
@@ -148,7 +152,7 @@ class SettingsScreen extends StatelessWidget {
                 subtitle: const Text('Delete all tasks and progress'),
                 onTap: () => _showClearConfirmation(context),
               ),
-              
+
               const Divider(height: 32),
               _buildSectionHeader(context, 'About'),
               _buildUsageStats(context, provider),
@@ -161,7 +165,8 @@ class SettingsScreen extends StatelessWidget {
                 leading: const Icon(Icons.privacy_tip_outlined),
                 title: const Text('Privacy Policy'),
                 trailing: const Icon(Icons.open_in_new, size: 18),
-                onTap: () => _openUrl('https://www.freeprivacypolicy.com/live/bece15e9-ea42-4925-a22b-9d0bae1bbfe3'),
+                onTap: () => _openUrl(
+                    'https://www.freeprivacypolicy.com/live/bece15e9-ea42-4925-a22b-9d0bae1bbfe3'),
               ),
               ListTile(
                 leading: const Icon(Icons.language),
@@ -174,7 +179,7 @@ class SettingsScreen extends StatelessWidget {
                 title: const Text('Made for ADHD minds'),
                 subtitle: const Text('One tiny step at a time'),
               ),
-              
+
               // Debug tools — only in debug builds
               if (kDebugMode) ...[
                 const Divider(height: 32),
@@ -182,7 +187,8 @@ class SettingsScreen extends StatelessWidget {
                 ListTile(
                   leading: Icon(Icons.bug_report, color: Colors.red.shade700),
                   title: const Text('Debug Tools'),
-                  subtitle: const Text('Force onboarding, toggle premium, etc.'),
+                  subtitle:
+                      const Text('Force onboarding, toggle premium, etc.'),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () => Navigator.of(context).push(
                     MaterialPageRoute(builder: (_) => const DebugScreen()),
@@ -195,11 +201,11 @@ class SettingsScreen extends StatelessWidget {
       ),
     );
   }
-  
+
   Widget _buildUpgradeBanner(BuildContext context, TaskProvider provider) {
     final remaining = provider.remainingFreeDecompositions;
     final colorScheme = Theme.of(context).colorScheme;
-    
+
     return Card(
       margin: const EdgeInsets.all(16),
       color: colorScheme.primaryContainer,
@@ -231,17 +237,18 @@ class SettingsScreen extends StatelessWidget {
                     Text(
                       'Upgrade to Pro',
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: colorScheme.onPrimaryContainer,
-                      ),
+                            fontWeight: FontWeight.bold,
+                            color: colorScheme.onPrimaryContainer,
+                          ),
                     ),
                     Text(
-                      remaining == -1 
+                      remaining == -1
                           ? 'Unlimited breakdowns with your API key'
                           : '$remaining free breakdowns remaining',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: colorScheme.onPrimaryContainer.withValues(alpha: 0.8),
-                      ),
+                            color: colorScheme.onPrimaryContainer
+                                .withValues(alpha: 0.8),
+                          ),
                     ),
                   ],
                 ),
@@ -260,17 +267,17 @@ class SettingsScreen extends StatelessWidget {
       child: Text(
         title,
         style: Theme.of(context).textTheme.titleSmall?.copyWith(
-          color: Theme.of(context).colorScheme.primary,
-          fontWeight: FontWeight.bold,
-        ),
+              color: Theme.of(context).colorScheme.primary,
+              fontWeight: FontWeight.bold,
+            ),
       ),
     );
   }
-  
+
   Widget _buildThemeSelector(BuildContext context) {
     final themeProvider = context.watch<ThemeProvider>();
     final currentPreference = themeProvider.preference;
-    
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Column(
@@ -294,8 +301,9 @@ class SettingsScreen extends StatelessWidget {
                     Text(
                       'Choose your preferred appearance',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
+                            color:
+                                Theme.of(context).colorScheme.onSurfaceVariant,
+                          ),
                     ),
                   ],
                 ),
@@ -314,50 +322,72 @@ class SettingsScreen extends StatelessWidget {
               children: ThemePreference.values.map((pref) {
                 final isSelected = pref == currentPreference;
                 return Expanded(
-                  child: GestureDetector(
-                    onTap: () {
-                      themeProvider.setPreference(pref);
-                      // Haptic feedback
-                      ScaffoldMessenger.of(context).clearSnackBars();
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('Theme set to ${ThemeProvider.getDisplayName(pref)}'),
-                          behavior: SnackBarBehavior.floating,
-                          duration: const Duration(seconds: 1),
-                        ),
-                      );
-                    },
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 200),
-                      curve: Curves.easeInOut,
-                      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
-                      decoration: BoxDecoration(
-                        color: isSelected
-                            ? Theme.of(context).colorScheme.primaryContainer
-                            : Colors.transparent,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            ThemeProvider.getIcon(pref),
-                            size: 18,
-                            color: isSelected
-                                ? Theme.of(context).colorScheme.onPrimaryContainer
-                                : Theme.of(context).colorScheme.onSurfaceVariant,
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            ThemeProvider.getDisplayName(pref),
-                            style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                              color: isSelected
-                                  ? Theme.of(context).colorScheme.onPrimaryContainer
-                                  : Theme.of(context).colorScheme.onSurfaceVariant,
-                              fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                  child: Semantics(
+                    label: '${ThemeProvider.getDisplayName(pref)} theme',
+                    button: true,
+                    selected: isSelected,
+                    child: ExcludeSemantics(
+                      child: GestureDetector(
+                        onTap: () {
+                          themeProvider.setPreference(pref);
+                          // Haptic feedback
+                          ScaffoldMessenger.of(context).clearSnackBars();
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                  'Theme set to ${ThemeProvider.getDisplayName(pref)}'),
+                              behavior: SnackBarBehavior.floating,
+                              duration: const Duration(seconds: 1),
                             ),
+                          );
+                        },
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          curve: Curves.easeInOut,
+                          padding: const EdgeInsets.symmetric(
+                              vertical: 10, horizontal: 8),
+                          decoration: BoxDecoration(
+                            color: isSelected
+                                ? Theme.of(context).colorScheme.primaryContainer
+                                : Colors.transparent,
+                            borderRadius: BorderRadius.circular(8),
                           ),
-                        ],
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                ThemeProvider.getIcon(pref),
+                                size: 18,
+                                color: isSelected
+                                    ? Theme.of(context)
+                                        .colorScheme
+                                        .onPrimaryContainer
+                                    : Theme.of(context)
+                                        .colorScheme
+                                        .onSurfaceVariant,
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                ThemeProvider.getDisplayName(pref),
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .labelMedium
+                                    ?.copyWith(
+                                      color: isSelected
+                                          ? Theme.of(context)
+                                              .colorScheme
+                                              .onPrimaryContainer
+                                          : Theme.of(context)
+                                              .colorScheme
+                                              .onSurfaceVariant,
+                                      fontWeight: isSelected
+                                          ? FontWeight.w600
+                                          : FontWeight.normal,
+                                    ),
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
                     ),
                   ),
@@ -386,22 +416,49 @@ class SettingsScreen extends StatelessWidget {
       onChanged: onChanged,
     );
   }
-  
+
+  Widget _buildRewardPersonalizationTile(BuildContext context) {
+    return Consumer<XPService>(
+      builder: (context, xpService, _) {
+        final theme = UnlockableTheme.all.firstWhere(
+          (theme) => theme.id == xpService.selectedTheme,
+          orElse: () => UnlockableTheme.all.first,
+        );
+        final sound = UnlockableSound.all.firstWhere(
+          (sound) => sound.id == xpService.selectedSound,
+          orElse: () => UnlockableSound.all.first,
+        );
+
+        return ListTile(
+          leading: const Icon(Icons.palette_outlined),
+          title: const Text('Theme & celebration sound'),
+          subtitle: Text('${theme.name} · ${sound.name}'),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => const PersonalizationScreen(),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Widget _buildCalendarSettings(BuildContext context) {
     final calendarService = context.read<CalendarService>();
-    
+
     return FutureBuilder<bool>(
       future: calendarService.hasCalendarPermission(),
       builder: (context, snapshot) {
         final hasPermission = snapshot.data ?? false;
         final isEnabled = calendarService.calendarEnabled;
-        
+
         return Column(
           children: [
             SwitchListTile(
               secondary: Icon(
-                isEnabled && hasPermission 
-                    ? Icons.calendar_today 
+                isEnabled && hasPermission
+                    ? Icons.calendar_today
                     : Icons.calendar_today_outlined,
                 color: isEnabled && hasPermission
                     ? Theme.of(context).colorScheme.primary
@@ -420,7 +477,8 @@ class SettingsScreen extends StatelessWidget {
                   if (!granted && context.mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
-                        content: Text('Please enable calendar access in system settings'),
+                        content: Text(
+                            'Please enable calendar access in system settings'),
                         behavior: SnackBarBehavior.floating,
                       ),
                     );
@@ -443,8 +501,9 @@ class SettingsScreen extends StatelessWidget {
       },
     );
   }
-  
-  Widget _buildDefaultCalendarTile(BuildContext context, CalendarService calendarService) {
+
+  Widget _buildDefaultCalendarTile(
+      BuildContext context, CalendarService calendarService) {
     return FutureBuilder(
       future: calendarService.getAvailableCalendars(),
       builder: (context, snapshot) {
@@ -456,7 +515,7 @@ class SettingsScreen extends StatelessWidget {
                 orElse: () => calendars.first,
               )
             : null;
-        
+
         return ListTile(
           leading: const Icon(Icons.folder_outlined),
           title: const Text('Default Calendar'),
@@ -467,8 +526,9 @@ class SettingsScreen extends StatelessWidget {
       },
     );
   }
-  
-  void _showCalendarPicker(BuildContext context, CalendarService calendarService, List<Calendar> calendars) {
+
+  void _showCalendarPicker(BuildContext context,
+      CalendarService calendarService, List<Calendar> calendars) {
     if (calendars.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -478,7 +538,7 @@ class SettingsScreen extends StatelessWidget {
       );
       return;
     }
-    
+
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -490,21 +550,26 @@ class SettingsScreen extends StatelessWidget {
             itemCount: calendars.length,
             itemBuilder: (context, index) {
               final calendar = calendars[index];
-              final isSelected = calendar.id == calendarService.defaultCalendarId;
-              
+              final isSelected =
+                  calendar.id == calendarService.defaultCalendarId;
+
               return ListTile(
                 leading: Icon(
-                  isSelected ? Icons.check_circle : Icons.calendar_today_outlined,
-                  color: isSelected ? Theme.of(context).colorScheme.primary : null,
+                  isSelected
+                      ? Icons.check_circle
+                      : Icons.calendar_today_outlined,
+                  color:
+                      isSelected ? Theme.of(context).colorScheme.primary : null,
                 ),
                 title: Text(
                   calendar.name ?? 'Calendar',
                   style: TextStyle(
-                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                    fontWeight:
+                        isSelected ? FontWeight.bold : FontWeight.normal,
                   ),
                 ),
-                subtitle: calendar.accountName != null 
-                    ? Text(calendar.accountName!) 
+                subtitle: calendar.accountName != null
+                    ? Text(calendar.accountName!)
                     : null,
                 onTap: () {
                   calendarService.defaultCalendarId = calendar.id;
@@ -531,10 +596,11 @@ class SettingsScreen extends StatelessWidget {
       ),
     );
   }
-  
-  Widget _buildReminderMinutesTile(BuildContext context, CalendarService calendarService) {
+
+  Widget _buildReminderMinutesTile(
+      BuildContext context, CalendarService calendarService) {
     final currentMinutes = calendarService.defaultReminderMinutes;
-    
+
     return ListTile(
       leading: const Icon(Icons.alarm_outlined),
       title: const Text('Default Reminder'),
@@ -543,11 +609,12 @@ class SettingsScreen extends StatelessWidget {
       onTap: () => _showReminderMinutesPicker(context, calendarService),
     );
   }
-  
-  void _showReminderMinutesPicker(BuildContext context, CalendarService calendarService) {
+
+  void _showReminderMinutesPicker(
+      BuildContext context, CalendarService calendarService) {
     final options = [5, 10, 15, 30];
     final currentMinutes = calendarService.defaultReminderMinutes;
-    
+
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -559,7 +626,8 @@ class SettingsScreen extends StatelessWidget {
             return ListTile(
               leading: Icon(
                 isSelected ? Icons.check_circle : Icons.access_time,
-                color: isSelected ? Theme.of(context).colorScheme.primary : null,
+                color:
+                    isSelected ? Theme.of(context).colorScheme.primary : null,
               ),
               title: Text(
                 '$mins minutes before',
@@ -591,7 +659,7 @@ class SettingsScreen extends StatelessWidget {
       ),
     );
   }
-  
+
   Widget _buildNotificationToggle(BuildContext context, TaskProvider provider) {
     return SwitchListTile(
       secondary: const Icon(Icons.notifications_outlined),
@@ -609,7 +677,8 @@ class SettingsScreen extends StatelessWidget {
             if (context.mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
-                  content: Text('Please enable notifications in system settings'),
+                  content:
+                      Text('Please enable notifications in system settings'),
                   behavior: SnackBarBehavior.floating,
                 ),
               );
@@ -621,12 +690,12 @@ class SettingsScreen extends StatelessWidget {
       },
     );
   }
-  
+
   Widget _buildReminderTimeTile(BuildContext context, TaskProvider provider) {
     final hour = provider.reminderHour;
     final minute = provider.reminderMinute;
     final timeStr = TimeOfDay(hour: hour, minute: minute).format(context);
-    
+
     return ListTile(
       leading: const Icon(Icons.access_time),
       title: const Text('Daily Reminder Time'),
@@ -635,19 +704,19 @@ class SettingsScreen extends StatelessWidget {
       onTap: () => _showTimePicker(context, provider),
     );
   }
-  
+
   void _showTimePicker(BuildContext context, TaskProvider provider) async {
     final currentTime = TimeOfDay(
       hour: provider.reminderHour,
       minute: provider.reminderMinute,
     );
-    
+
     final picked = await showTimePicker(
       context: context,
       initialTime: currentTime,
       helpText: 'When should I remind you?',
     );
-    
+
     if (picked != null) {
       await provider.setReminderTime(picked.hour, picked.minute);
       if (context.mounted) {
@@ -660,8 +729,9 @@ class SettingsScreen extends StatelessWidget {
       }
     }
   }
-  
-  Widget _buildTestNotificationTile(BuildContext context, TaskProvider provider) {
+
+  Widget _buildTestNotificationTile(
+      BuildContext context, TaskProvider provider) {
     return ListTile(
       leading: const Icon(Icons.send_outlined),
       title: const Text('Test Notification'),
@@ -679,14 +749,15 @@ class SettingsScreen extends StatelessWidget {
       },
     );
   }
-  
-  Widget _buildDecompositionStyleTile(BuildContext context, TaskProvider provider) {
+
+  Widget _buildDecompositionStyleTile(
+      BuildContext context, TaskProvider provider) {
     final style = provider.decompositionStyle;
-    
+
     String styleName;
     String styleDesc;
     IconData styleIcon;
-    
+
     switch (style) {
       case DecompositionStyle.quick:
         styleName = 'Quick';
@@ -704,7 +775,7 @@ class SettingsScreen extends StatelessWidget {
         styleIcon = Icons.auto_awesome_outlined;
         break;
     }
-    
+
     return ListTile(
       leading: Icon(styleIcon),
       title: const Text('Decomposition Style'),
@@ -713,8 +784,9 @@ class SettingsScreen extends StatelessWidget {
       onTap: () => _showDecompositionStyleDialog(context, provider),
     );
   }
-  
-  void _showDecompositionStyleDialog(BuildContext context, TaskProvider provider) {
+
+  void _showDecompositionStyleDialog(
+      BuildContext context, TaskProvider provider) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -762,7 +834,7 @@ class SettingsScreen extends StatelessWidget {
       ),
     );
   }
-  
+
   Widget _buildStyleOption(
     BuildContext context,
     TaskProvider provider,
@@ -772,18 +844,14 @@ class SettingsScreen extends StatelessWidget {
     IconData icon,
   ) {
     final isSelected = provider.decompositionStyle == style;
-    
+
     return Card(
-      color: isSelected 
-          ? Theme.of(context).colorScheme.primaryContainer 
-          : null,
+      color: isSelected ? Theme.of(context).colorScheme.primaryContainer : null,
       margin: const EdgeInsets.symmetric(vertical: 4),
       child: ListTile(
         leading: Icon(
           icon,
-          color: isSelected 
-              ? Theme.of(context).colorScheme.primary 
-              : null,
+          color: isSelected ? Theme.of(context).colorScheme.primary : null,
         ),
         title: Text(
           title,
@@ -792,7 +860,7 @@ class SettingsScreen extends StatelessWidget {
           ),
         ),
         subtitle: Text(description),
-        trailing: isSelected 
+        trailing: isSelected
             ? Icon(
                 Icons.check_circle,
                 color: Theme.of(context).colorScheme.primary,
@@ -811,10 +879,10 @@ class SettingsScreen extends StatelessWidget {
       ),
     );
   }
-  
+
   Widget _buildNameTile(BuildContext context, TaskProvider provider) {
     final name = provider.userName;
-    
+
     return ListTile(
       leading: const Icon(Icons.person_outline),
       title: const Text('Your Name'),
@@ -823,10 +891,10 @@ class SettingsScreen extends StatelessWidget {
       onTap: () => _showNameDialog(context, provider),
     );
   }
-  
+
   void _showNameDialog(BuildContext context, TaskProvider provider) {
     final controller = TextEditingController(text: provider.userName ?? '');
-    
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -861,10 +929,10 @@ class SettingsScreen extends StatelessWidget {
       ),
     );
   }
-  
+
   Widget _buildCoachSelectorTile(BuildContext context, TaskProvider provider) {
     final coach = provider.selectedCoach;
-    
+
     return ListTile(
       leading: Icon(
         coach.icon,
@@ -879,13 +947,14 @@ class SettingsScreen extends StatelessWidget {
       ),
     );
   }
-  
-  Widget _buildDefaultAmbientSoundTile(BuildContext context, TaskProvider provider) {
+
+  Widget _buildDefaultAmbientSoundTile(
+      BuildContext context, TaskProvider provider) {
     final sound = provider.defaultAmbientSound;
-    
+
     String soundName;
     IconData soundIcon;
-    
+
     switch (sound) {
       case DefaultAmbientSound.cafe:
         soundName = 'Café';
@@ -904,7 +973,7 @@ class SettingsScreen extends StatelessWidget {
         soundIcon = Icons.volume_off;
         break;
     }
-    
+
     return ListTile(
       leading: Icon(soundIcon),
       title: const Text('Default Ambient Sound'),
@@ -913,8 +982,9 @@ class SettingsScreen extends StatelessWidget {
       onTap: () => _showDefaultAmbientSoundDialog(context, provider),
     );
   }
-  
-  void _showDefaultAmbientSoundDialog(BuildContext context, TaskProvider provider) {
+
+  void _showDefaultAmbientSoundDialog(
+      BuildContext context, TaskProvider provider) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -970,7 +1040,7 @@ class SettingsScreen extends StatelessWidget {
       ),
     );
   }
-  
+
   Widget _buildSoundOption(
     BuildContext context,
     TaskProvider provider,
@@ -980,18 +1050,14 @@ class SettingsScreen extends StatelessWidget {
     IconData icon,
   ) {
     final isSelected = provider.defaultAmbientSound == sound;
-    
+
     return Card(
-      color: isSelected 
-          ? Theme.of(context).colorScheme.primaryContainer 
-          : null,
+      color: isSelected ? Theme.of(context).colorScheme.primaryContainer : null,
       margin: const EdgeInsets.symmetric(vertical: 4),
       child: ListTile(
         leading: Icon(
           icon,
-          color: isSelected 
-              ? Theme.of(context).colorScheme.primary 
-              : null,
+          color: isSelected ? Theme.of(context).colorScheme.primary : null,
         ),
         title: Text(
           title,
@@ -1000,7 +1066,7 @@ class SettingsScreen extends StatelessWidget {
           ),
         ),
         subtitle: Text(description),
-        trailing: isSelected 
+        trailing: isSelected
             ? Icon(
                 Icons.check_circle,
                 color: Theme.of(context).colorScheme.primary,
@@ -1019,10 +1085,10 @@ class SettingsScreen extends StatelessWidget {
       ),
     );
   }
-  
+
   Widget _buildApiKeyTile(BuildContext context, TaskProvider provider) {
     final hasKey = provider.hasCustomApiKey;
-    
+
     return ListTile(
       leading: Icon(
         hasKey ? Icons.key : Icons.key_outlined,
@@ -1030,11 +1096,11 @@ class SettingsScreen extends StatelessWidget {
       ),
       title: const Text('OpenAI API Key'),
       subtitle: Text(
-        hasKey 
+        hasKey
             ? 'Custom key configured (unlimited use)'
             : 'Add your own key for unlimited breakdowns',
       ),
-      trailing: hasKey 
+      trailing: hasKey
           ? IconButton(
               icon: const Icon(Icons.close),
               onPressed: () => _showRemoveApiKeyDialog(context, provider),
@@ -1043,27 +1109,27 @@ class SettingsScreen extends StatelessWidget {
       onTap: () => _showApiKeyDialog(context, provider),
     );
   }
-  
+
   Widget _buildUsageStats(BuildContext context, TaskProvider provider) {
     final isPremium = provider.isPremium;
-    
+
     String statusText;
     IconData statusIcon;
     Color statusColor;
-    
+
     if (isPremium) {
       statusText = 'Pro (Unlimited)';
       statusIcon = Icons.workspace_premium;
       statusColor = Colors.amber;
     } else {
       final remaining = provider.remainingFreeDecompositions;
-      statusText = remaining > 0 
+      statusText = remaining > 0
           ? 'Free ($remaining breakdowns remaining)'
           : 'Free (limit reached)';
       statusIcon = Icons.person_outline;
       statusColor = Theme.of(context).colorScheme.primary;
     }
-    
+
     return ListTile(
       leading: Icon(statusIcon, color: statusColor),
       title: const Text('Account Status'),
@@ -1111,10 +1177,10 @@ class SettingsScreen extends StatelessWidget {
       ),
     );
   }
-  
+
   void _showApiKeyDialog(BuildContext context, TaskProvider provider) {
     final controller = TextEditingController(text: provider.openAIApiKey ?? '');
-    
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -1142,8 +1208,8 @@ class SettingsScreen extends StatelessWidget {
             Text(
               'Get your key at platform.openai.com',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: Theme.of(context).colorScheme.primary,
-              ),
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
             ),
           ],
         ),
@@ -1163,7 +1229,8 @@ class SettingsScreen extends StatelessWidget {
               Navigator.of(context).pop();
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
-                  content: Text(key.isEmpty ? 'API key removed' : 'API key saved'),
+                  content:
+                      Text(key.isEmpty ? 'API key removed' : 'API key saved'),
                   behavior: SnackBarBehavior.floating,
                 ),
               );
@@ -1174,7 +1241,7 @@ class SettingsScreen extends StatelessWidget {
       ),
     );
   }
-  
+
   void _showRemoveApiKeyDialog(BuildContext context, TaskProvider provider) {
     showDialog(
       context: context,

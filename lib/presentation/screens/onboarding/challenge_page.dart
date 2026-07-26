@@ -109,7 +109,12 @@ class _ChallengeCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
+    return Semantics(
+      label: '$title. $description',
+      button: true,
+      selected: isSelected,
+      child: ExcludeSemantics(
+        child: Material(
       color: isSelected
           ? Theme.of(context).colorScheme.primaryContainer
           : Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.5),
@@ -177,6 +182,8 @@ class _ChallengeCard extends StatelessWidget {
           ),
         ),
       ),
+      ),
+    ),
     );
   }
 }

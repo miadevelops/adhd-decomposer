@@ -59,7 +59,7 @@ class NotificationService {
     _box = await Hive.openBox(_boxName);
     
     // Initialize notifications
-    const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
+    const androidSettings = AndroidInitializationSettings('app_icon_notification');
     
     // iOS settings - request permissions later
     const iosSettings = DarwinInitializationSettings(

@@ -1,15 +1,19 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:provider/provider.dart';
 import 'package:confetti/confetti.dart';
+import '../../data/models/player_profile.dart';
 import '../../data/services/stats_service.dart';
 import '../../data/services/achievements_service.dart';
 import '../../data/services/share_service.dart';
 import '../../data/services/siri_service.dart';
 import '../../data/services/xp_service.dart';
 import '../widgets/share_card.dart';
-import 'profile_screen.dart';
+import 'achievements_screen.dart';
+import 'level_progression_screen.dart';
+import 'personalization_screen.dart';
 
 class StatsScreen extends StatefulWidget {
   const StatsScreen({super.key});
@@ -25,9 +29,10 @@ class _StatsScreenState extends State<StatsScreen> {
   @override
   void initState() {
     super.initState();
-    _confettiController = ConfettiController(duration: const Duration(seconds: 2));
-    
-    // Check for newly unlocked achievements
+    _confettiController =
+        ConfettiController(duration: const Duration(seconds: 2));
+
+    // Check for pending progress celebrations.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkForCelebration();
       // Donate intent for Siri to learn this pattern
@@ -42,6 +47,13 @@ class _StatsScreenState extends State<StatsScreen> {
   }
 
   void _checkForCelebration() {
+    final xpService = context.read<XPService>();
+    final levelUp = xpService.pendingLevelUp;
+    if (levelUp != null) {
+      _showLevelUpCelebration(levelUp);
+      return;
+    }
+
     final achievements = context.read<AchievementsService>();
     final nextAchievement = achievements.popNewlyUnlocked();
     if (nextAchievement != null) {
@@ -49,9 +61,29 @@ class _StatsScreenState extends State<StatsScreen> {
     }
   }
 
+  void _showLevelUpCelebration(LevelUpEvent levelUp) {
+    _confettiController.play();
+    HapticFeedback.heavyImpact();
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => _LevelUpDialog(
+        levelUp: levelUp,
+        onDismiss: () {
+          Navigator.of(ctx).pop();
+          context.read<XPService>().clearPendingLevelUp();
+          Future.delayed(const Duration(milliseconds: 500), () {
+            if (mounted) _checkForCelebration();
+          });
+        },
+      ),
+    );
+  }
+
   void _showAchievementCelebration(Achievement achievement) {
     _confettiController.play();
-    
+
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -107,7 +139,8 @@ class _StatsScreenState extends State<StatsScreen> {
                 Navigator.pop(ctx);
                 await ShareService.captureAndShare(
                   key: _shareCardKey,
-                  shareText: 'My Tiny Steps Progress: ${stats.currentStreak} day streak 🔥, ${stats.totalTasksCompleted} tasks completed! #TinySteps #ProductivityWin',
+                  shareText:
+                      'My Tiny Steps Progress: ${stats.currentStreak} day streak 🔥, ${stats.totalTasksCompleted} tasks completed! #TinySteps #ProductivityWin',
                   subject: 'My Tiny Steps Progress',
                 );
                 // Track the share
@@ -118,7 +151,8 @@ class _StatsScreenState extends State<StatsScreen> {
               icon: const Icon(Icons.share),
               label: const Text('Share'),
               style: ElevatedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
               ),
             ),
             const SizedBox(height: 16),
@@ -133,10 +167,10 @@ class _StatsScreenState extends State<StatsScreen> {
     final stats = context.watch<StatsService>();
     final achievements = context.watch<AchievementsService>();
     final xpService = context.watch<XPService>();
-    
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Stats'),
+        title: const Text('Progress'),
         actions: [
           IconButton(
             icon: const Icon(Icons.share),
@@ -152,13 +186,9 @@ class _StatsScreenState extends State<StatsScreen> {
             children: [
               _buildLevelCard(context, xpService),
               const SizedBox(height: 24),
-              _buildStreakSection(context, stats),
+              _buildActivitySection(context, stats),
               const SizedBox(height: 24),
-              _buildStatsCards(context, stats),
-              const SizedBox(height: 24),
-              _buildWeeklyChart(context, stats),
-              const SizedBox(height: 24),
-              _buildAchievementsSection(context, achievements),
+              _buildJourneySection(context, achievements, xpService),
               const SizedBox(height: 32),
             ],
           ),
@@ -185,92 +215,108 @@ class _StatsScreenState extends State<StatsScreen> {
   }
 
   Widget _buildLevelCard(BuildContext context, XPService xpService) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final xpRemaining =
+        (xpService.xpForNextLevel - xpService.totalXP).clamp(0, 1000000);
+
     return Card(
-      child: InkWell(
-        onTap: () {
-          Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const ProfileScreen()),
-          );
-        },
+      color: colorScheme.primary.withValues(alpha: 0.08),
+      shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Row(
-            children: [
-              // Level badge
-              Container(
-                width: 56,
-                height: 56,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: LinearGradient(
-                    colors: [
-                      Theme.of(context).colorScheme.primary,
-                      Theme.of(context).colorScheme.primary.withOpacity(0.7),
+        side: BorderSide(
+          color: colorScheme.primary.withValues(alpha: 0.25),
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 64,
+                  height: 64,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: colorScheme.primary,
+                  ),
+                  alignment: Alignment.center,
+                  child: Text(
+                    '${xpService.level}',
+                    style: TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.bold,
+                      color: colorScheme.onPrimary,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'LEVEL ${xpService.level}',
+                        style:
+                            Theme.of(context).textTheme.labelMedium?.copyWith(
+                                  color: colorScheme.primary,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                      ),
+                      Text(
+                        xpService.currentTitle,
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                              fontWeight: FontWeight.bold,
+                            ),
+                      ),
                     ],
                   ),
                 ),
-                child: Center(
-                  child: Text(
-                    '${xpService.level}',
-                    style: const TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     Text(
-                      xpService.currentTitle,
+                      '+${xpService.xpEarnedToday}',
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
+                            color: colorScheme.primary,
+                            fontWeight: FontWeight.bold,
+                          ),
                     ),
-                    const SizedBox(height: 4),
                     Text(
-                      '${xpService.totalXP} XP total',
-                      style: Theme.of(context).textTheme.bodyMedium,
-                    ),
-                    const SizedBox(height: 8),
-                    // XP progress bar
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(4),
-                      child: LinearProgressIndicator(
-                        value: xpService.progressToNextLevel,
-                        backgroundColor: Theme.of(context).colorScheme.primary.withOpacity(0.2),
-                        minHeight: 6,
-                      ),
+                      'XP today',
+                      style: Theme.of(context).textTheme.bodySmall,
                     ),
                   ],
                 ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: LinearProgressIndicator(
+                value: xpService.progressToNextLevel,
+                backgroundColor: colorScheme.primary.withValues(alpha: 0.15),
+                minHeight: 10,
               ),
-              const SizedBox(width: 12),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text(
-                    '+${xpService.xpEarnedToday}',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      color: Theme.of(context).colorScheme.primary,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  Text(
-                    'XP today',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                ],
-              ),
-              const SizedBox(width: 8),
-              const Icon(Icons.chevron_right),
-            ],
-          ),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  '$xpRemaining XP to Level ${xpService.level + 1}',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                ),
+                Text(
+                  '${xpService.totalXP} XP total',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
+            ),
+          ],
         ),
       ),
     )
@@ -279,149 +325,86 @@ class _StatsScreenState extends State<StatsScreen> {
         .slideY(begin: -0.1, end: 0);
   }
 
-  Widget _buildStreakSection(BuildContext context, StatsService stats) {
-    final streak = stats.currentStreak;
-    final message = _getStreakMessage(streak);
-    
-    return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            Theme.of(context).colorScheme.primary,
-            Theme.of(context).colorScheme.primary.withOpacity(0.7),
-          ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Column(
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(
-                '🔥',
-                style: TextStyle(fontSize: streak > 0 ? 48 : 32),
-              ),
-              const SizedBox(width: 12),
-              Text(
-                '$streak',
-                style: const TextStyle(
-                  fontSize: 48,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                ),
-              ),
-            ],
-          ),
-          Text(
-            streak == 1 ? 'Day Streak' : 'Day Streak',
-            style: const TextStyle(
-              fontSize: 16,
-              color: Colors.white70,
-            ),
-          ),
-          const SizedBox(height: 12),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.2),
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Text(
-              message,
-              style: const TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: Colors.white,
-              ),
-              textAlign: TextAlign.center,
-            ),
-          ),
-          if (stats.longestStreak > stats.currentStreak) ...[
-            const SizedBox(height: 8),
-            Text(
-              'Personal best: ${stats.longestStreak} days',
-              style: TextStyle(
-                fontSize: 12,
-                color: Colors.white.withOpacity(0.7),
-              ),
-            ),
-          ],
-        ],
-      ),
-    )
-        .animate()
-        .fadeIn(duration: const Duration(milliseconds: 400))
-        .scale(begin: const Offset(0.95, 0.95), duration: const Duration(milliseconds: 400));
-  }
-
-  String _getStreakMessage(int streak) {
-    if (streak == 0) return "Start your streak today!";
-    if (streak == 1) return "Great start! Keep it going! 💪";
-    if (streak < 3) return "Keep it up! You're building momentum! 🚀";
-    if (streak < 7) return "On fire! Don't break the chain! 🔥";
-    if (streak < 14) return "Unstoppable! You're crushing it! ⭐";
-    if (streak < 30) return "Legendary streak! You're amazing! 🏆";
-    return "PHENOMENAL! You're an inspiration! 👑";
-  }
-
-  Widget _buildStatsCards(BuildContext context, StatsService stats) {
+  Widget _buildActivitySection(BuildContext context, StatsService stats) {
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            Expanded(
-              child: _StatCard(
-                icon: Icons.task_alt,
-                label: 'Tasks Done',
-                value: '${stats.totalTasksCompleted}',
-                color: const Color(0xFF4ECDC4),
-                delay: 0,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _StatCard(
-                icon: Icons.checklist,
-                label: 'Steps Done',
-                value: '${stats.totalStepsCompleted}',
-                color: const Color(0xFFFF6B6B),
-                delay: 100,
-              ),
-            ),
-          ],
+        Text(
+          'Activity',
+          style: Theme.of(context).textTheme.titleLarge,
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'A compact view of your completed work.',
+          style: Theme.of(context).textTheme.bodyMedium,
         ),
         const SizedBox(height: 12),
-        Row(
-          children: [
-            Expanded(
-              child: _StatCard(
-                icon: Icons.local_fire_department,
-                label: 'Pomodoros',
-                value: '${stats.totalPomodoros}',
-                color: const Color(0xFFFF9500),
-                delay: 200,
-              ),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: _ActivityMetric(
+                        icon: Icons.local_fire_department,
+                        value: '${stats.currentStreak}',
+                        label: 'Streak',
+                      ),
+                    ),
+                    Expanded(
+                      child: _ActivityMetric(
+                        icon: Icons.task_alt,
+                        value: '${stats.totalTasksCompleted}',
+                        label: 'Tasks',
+                      ),
+                    ),
+                    Expanded(
+                      child: _ActivityMetric(
+                        icon: Icons.checklist,
+                        value: '${stats.totalStepsCompleted}',
+                        label: 'Steps',
+                      ),
+                    ),
+                  ],
+                ),
+                const Divider(height: 28),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _ActivityMetric(
+                        icon: Icons.self_improvement,
+                        value: _formatMinutes(stats.totalBodyDoubleMinutes),
+                        label: 'Focus',
+                      ),
+                    ),
+                    Expanded(
+                      child: _ActivityMetric(
+                        icon: Icons.timer_outlined,
+                        value: '${stats.totalPomodoros}',
+                        label: 'Pomodoros',
+                      ),
+                    ),
+                    Expanded(
+                      child: _ActivityMetric(
+                        icon: Icons.hourglass_bottom,
+                        value: '${stats.timerUsageCount}',
+                        label: 'Timers',
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _StatCard(
-                icon: Icons.self_improvement,
-                label: 'Focus Time',
-                value: _formatMinutes(stats.totalBodyDoubleMinutes),
-                color: const Color(0xFF6366F1),
-                delay: 300,
-              ),
-            ),
-          ],
+          ),
         ),
+        const SizedBox(height: 8),
+        _buildWeeklyChart(context, stats),
       ],
     );
   }
-  
+
   String _formatMinutes(int minutes) {
     if (minutes < 60) return '${minutes}m';
     final hours = minutes ~/ 60;
@@ -434,234 +417,418 @@ class _StatsScreenState extends State<StatsScreen> {
     final last7Days = stats.getLast7DaysStats();
     final maxValue = last7Days.map((d) => d.tasksCompleted).fold<int>(0, max);
     final chartMax = maxValue > 0 ? maxValue : 1;
-    
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Last 7 Days',
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-            const SizedBox(height: 20),
-            SizedBox(
-              height: 120,
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: last7Days.asMap().entries.map((entry) {
-                  final index = entry.key;
-                  final day = entry.value;
-                  final height = day.tasksCompleted > 0 
-                      ? (day.tasksCompleted / chartMax) * 80 + 20 
-                      : 8.0;
-                  final isToday = index == last7Days.length - 1;
-                  
-                  return Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 4),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        children: [
-                          if (day.tasksCompleted > 0)
-                            Text(
-                              '${day.tasksCompleted}',
-                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          const SizedBox(height: 4),
-                          Container(
-                            height: height,
-                            decoration: BoxDecoration(
-                              color: isToday
-                                  ? Theme.of(context).colorScheme.primary
-                                  : Theme.of(context).colorScheme.primary.withOpacity(0.4),
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                          )
-                              .animate(delay: Duration(milliseconds: index * 80))
-                              .scaleY(begin: 0, end: 1, alignment: Alignment.bottomCenter)
-                              .fadeIn(),
-                          const SizedBox(height: 8),
+
+    return ExpansionTile(
+      leading: const Icon(Icons.calendar_view_week_outlined),
+      title: const Text('Weekly activity'),
+      subtitle: const Text('Last 7 days'),
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 16),
+          child: SizedBox(
+            height: 120,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: last7Days.asMap().entries.map((entry) {
+                final index = entry.key;
+                final day = entry.value;
+                final heightFactor = day.tasksCompleted > 0
+                    ? (day.tasksCompleted / chartMax).clamp(0.0, 1.0)
+                    : 0.08;
+                final isToday = index == last7Days.length - 1;
+
+                return Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        if (day.tasksCompleted > 0)
                           Text(
-                            day.dayName,
-                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              fontWeight: isToday ? FontWeight.bold : null,
-                            ),
+                            '${day.tasksCompleted}',
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodyMedium
+                                ?.copyWith(fontWeight: FontWeight.bold),
                           ),
-                        ],
-                      ),
+                        const SizedBox(height: 4),
+                        Expanded(
+                          child: Align(
+                            alignment: Alignment.bottomCenter,
+                            child: FractionallySizedBox(
+                              heightFactor: heightFactor,
+                              widthFactor: 1,
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: isToday
+                                      ? Theme.of(context).colorScheme.primary
+                                      : Theme.of(context)
+                                          .colorScheme
+                                          .primary
+                                          .withOpacity(0.4),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                              ),
+                            )
+                                .animate(
+                                  delay: Duration(milliseconds: index * 80),
+                                )
+                                .scaleY(
+                                  begin: 0,
+                                  end: 1,
+                                  alignment: Alignment.bottomCenter,
+                                )
+                                .fadeIn(),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          day.dayName,
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodyMedium
+                              ?.copyWith(
+                                fontWeight: isToday ? FontWeight.bold : null,
+                              ),
+                        ),
+                      ],
                     ),
-                  );
-                }).toList(),
-              ),
+                  ),
+                );
+              }).toList(),
             ),
-          ],
+          ),
         ),
-      ),
+      ],
     )
         .animate()
         .fadeIn(delay: const Duration(milliseconds: 200))
         .slideY(begin: 0.1, end: 0);
   }
 
-  Widget _buildAchievementsSection(BuildContext context, AchievementsService achievements) {
-    final achievementsWithStatus = achievements.achievementsWithStatus;
-    
+  Widget _buildJourneySection(
+    BuildContext context,
+    AchievementsService achievements,
+    XPService xpService,
+  ) {
+    final nextAchievement = achievements.nextAchievement;
+    final selectedTheme = UnlockableTheme.all.firstWhere(
+      (theme) => theme.id == xpService.selectedTheme,
+      orElse: () => UnlockableTheme.all.first,
+    );
+    final selectedSound = UnlockableSound.all.firstWhere(
+      (sound) => sound.id == xpService.selectedSound,
+      orElse: () => UnlockableSound.all.first,
+    );
+    final upcomingRewards = buildLevelRewards()
+        .where((reward) => reward.level > xpService.level)
+        .toList();
+    final nextReward = upcomingRewards.firstOrNull;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            Text(
-              'Achievements',
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-            const Spacer(),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Text(
-                '${achievements.unlockedCount}/${achievements.totalCount}',
-                style: TextStyle(
-                  color: Theme.of(context).colorScheme.primary,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-          ],
+        Text('Up next', style: Theme.of(context).textTheme.titleLarge),
+        const SizedBox(height: 4),
+        Text(
+          'Keep moving toward your next milestones.',
+          style: Theme.of(context).textTheme.bodyMedium,
         ),
         const SizedBox(height: 16),
-        ...achievementsWithStatus.asMap().entries.map((entry) {
-          final index = entry.key;
-          final (achievement, isUnlocked) = entry.value;
-          return _AchievementTile(
-            achievement: achievement,
-            isUnlocked: isUnlocked,
-            delay: index * 50,
-          );
-        }),
+        if (nextAchievement != null)
+          _NextAchievementCard(
+            achievement: nextAchievement,
+            progress: achievements.progressFor(nextAchievement),
+            progressLabel: achievements.progressLabelFor(nextAchievement),
+            nextReward: nextReward,
+          )
+        else
+          _AllAchievementsCompleteCard(nextReward: nextReward),
+        const SizedBox(height: 24),
+        Text('Explore', style: Theme.of(context).textTheme.titleLarge),
+        const SizedBox(height: 8),
+        Card(
+          child: Column(
+            children: [
+              ListTile(
+                leading: const Icon(Icons.workspace_premium_outlined),
+                title: const Text('Achievements'),
+                subtitle: Text(
+                  '${achievements.unlockedCount} of ${achievements.totalCount} unlocked',
+                ),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const AchievementsScreen(),
+                  ),
+                ),
+              ),
+              const Divider(height: 1, indent: 16, endIndent: 16),
+              ListTile(
+                leading: const Icon(Icons.route_outlined),
+                title: const Text('Level progression'),
+                subtitle: const Text('See every level and unlock'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const LevelProgressionScreen(),
+                  ),
+                ),
+              ),
+              const Divider(height: 1, indent: 16, endIndent: 16),
+              ListTile(
+                leading: const Icon(Icons.palette_outlined),
+                title: const Text('Personalize'),
+                subtitle: Text(
+                  '${selectedTheme.name} · ${selectedSound.name}',
+                ),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const PersonalizationScreen(),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ],
     );
   }
 }
 
-class _StatCard extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final String value;
-  final Color color;
-  final int delay;
+class _NextAchievementCard extends StatelessWidget {
+  final Achievement achievement;
+  final double progress;
+  final String progressLabel;
+  final LevelRewardInfo? nextReward;
 
-  const _StatCard({
-    required this.icon,
-    required this.label,
-    required this.value,
-    required this.color,
-    this.delay = 0,
+  const _NextAchievementCard({
+    required this.achievement,
+    required this.progress,
+    required this.progressLabel,
+    this.nextReward,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            Icon(icon, size: 32, color: color),
-            const SizedBox(height: 8),
-            Text(
-              value,
-              style: Theme.of(context).textTheme.displaySmall?.copyWith(
-                color: color,
-                fontWeight: FontWeight.bold,
+    return Semantics(
+      label: 'Next achievement: ${achievement.title}. '
+          '$progressLabel completed.'
+          '${nextReward == null ? '' : ' Next level unlock: ${nextReward!.name} ${nextReward!.type.label} at Level ${nextReward!.level}.'}',
+      child: Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 48,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      color: Theme.of(context)
+                          .colorScheme
+                          .primary
+                          .withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(
+                      achievement.icon,
+                      style: const TextStyle(fontSize: 24),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Next up',
+                          style: Theme.of(context)
+                              .textTheme
+                              .labelMedium
+                              ?.copyWith(
+                                color: Theme.of(context).colorScheme.primary,
+                                fontWeight: FontWeight.bold,
+                              ),
+                        ),
+                        Text(
+                          achievement.title,
+                          style:
+                              Theme.of(context).textTheme.titleMedium?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                        ),
+                        Text(
+                          achievement.description,
+                          style: Theme.of(context).textTheme.bodyMedium,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              label,
-              style: Theme.of(context).textTheme.bodyMedium,
-              textAlign: TextAlign.center,
-            ),
-          ],
+              const SizedBox(height: 16),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: LinearProgressIndicator(
+                  value: progress,
+                  minHeight: 8,
+                  backgroundColor:
+                      Theme.of(context).colorScheme.primary.withValues(
+                            alpha: 0.15,
+                          ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerRight,
+                child: Text(
+                  progressLabel,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                ),
+              ),
+              if (nextReward != null) ...[
+                const Divider(height: 32),
+                _NextRewardRow(reward: nextReward!),
+              ],
+            ],
+          ),
         ),
       ),
-    )
-        .animate(delay: Duration(milliseconds: delay))
-        .fadeIn()
-        .slideY(begin: 0.2, end: 0);
+    );
   }
 }
 
-class _AchievementTile extends StatelessWidget {
-  final Achievement achievement;
-  final bool isUnlocked;
-  final int delay;
+class _AllAchievementsCompleteCard extends StatelessWidget {
+  final LevelRewardInfo? nextReward;
 
-  const _AchievementTile({
-    required this.achievement,
-    required this.isUnlocked,
-    this.delay = 0,
-  });
+  const _AllAchievementsCompleteCard({this.nextReward});
 
   @override
   Widget build(BuildContext context) {
     return Card(
-      margin: const EdgeInsets.only(bottom: 8),
-      color: isUnlocked
-          ? null
-          : Theme.of(context).colorScheme.surface.withOpacity(0.5),
-      child: ListTile(
-        leading: Container(
-          width: 48,
-          height: 48,
-          decoration: BoxDecoration(
-            color: isUnlocked
-                ? Theme.of(context).colorScheme.primary.withOpacity(0.1)
-                : Colors.grey.withOpacity(0.2),
-            borderRadius: BorderRadius.circular(12),
+      child: Column(
+        children: [
+          ListTile(
+            leading: Icon(
+              Icons.emoji_events,
+              color: Theme.of(context).colorScheme.primary,
+            ),
+            title: const Text('Collection complete'),
+            subtitle: const Text('Every achievement is unlocked.'),
           ),
-          child: Center(
-            child: Text(
-              isUnlocked ? achievement.icon : '🔒',
-              style: TextStyle(
-                fontSize: 24,
-                color: isUnlocked ? null : Colors.grey,
+          if (nextReward != null) ...[
+            const Divider(height: 1, indent: 16, endIndent: 16),
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: _NextRewardRow(reward: nextReward!),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _NextRewardRow extends StatelessWidget {
+  final LevelRewardInfo reward;
+
+  const _NextRewardRow({required this.reward});
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => const LevelProgressionScreen()),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Row(
+          children: [
+            Text(reward.emoji, style: const TextStyle(fontSize: 24)),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Next level unlock',
+                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                          color: Theme.of(context).colorScheme.primary,
+                          fontWeight: FontWeight.bold,
+                        ),
+                  ),
+                  Text(
+                    '${reward.name} ${reward.type.label.toLowerCase()}',
+                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                  ),
+                  Text(
+                    'Reach Level ${reward.level}',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
               ),
             ),
-          ),
+            const Icon(Icons.chevron_right),
+          ],
         ),
-        title: Text(
-          achievement.title,
-          style: TextStyle(
-            fontWeight: FontWeight.w600,
-            color: isUnlocked ? null : Colors.grey,
-          ),
-        ),
-        subtitle: Text(
-          achievement.description,
-          style: TextStyle(
-            color: isUnlocked 
-                ? Theme.of(context).textTheme.bodyMedium?.color 
-                : Colors.grey,
-          ),
-        ),
-        trailing: isUnlocked
-            ? Icon(
-                Icons.check_circle,
-                color: Theme.of(context).colorScheme.primary,
-              )
-            : null,
       ),
-    )
-        .animate(delay: Duration(milliseconds: delay))
-        .fadeIn()
-        .slideX(begin: 0.1, end: 0);
+    );
+  }
+}
+
+class _ActivityMetric extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+
+  const _ActivityMetric({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: '$label: $value',
+      excludeSemantics: true,
+      child: Column(
+        children: [
+          Icon(
+            icon,
+            size: 20,
+            color: Theme.of(context).colorScheme.primary,
+          ),
+          const SizedBox(height: 4),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              value,
+              maxLines: 1,
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+            ),
+          ),
+          Text(
+            label,
+            style: Theme.of(context).textTheme.bodySmall,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -701,8 +868,8 @@ class _AchievementUnlockedDialog extends StatelessWidget {
             Text(
               'Achievement Unlocked!',
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                color: Theme.of(context).colorScheme.primary,
-              ),
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
             ),
             const SizedBox(height: 24),
             Container(
@@ -716,9 +883,7 @@ class _AchievementUnlockedDialog extends StatelessWidget {
                   Text(
                     achievement.icon,
                     style: const TextStyle(fontSize: 48),
-                  )
-                      .animate()
-                      .scale(
+                  ).animate().scale(
                         begin: const Offset(0, 0),
                         end: const Offset(1, 1),
                         curve: Curves.elasticOut,
@@ -746,9 +911,7 @@ class _AchievementUnlockedDialog extends StatelessWidget {
             ElevatedButton(
               onPressed: onDismiss,
               child: const Text('Awesome!'),
-            )
-                .animate()
-                .fadeIn(delay: const Duration(milliseconds: 400)),
+            ).animate().fadeIn(delay: const Duration(milliseconds: 400)),
           ],
         ),
       ),
@@ -756,5 +919,46 @@ class _AchievementUnlockedDialog extends StatelessWidget {
         .animate()
         .fadeIn(duration: const Duration(milliseconds: 200))
         .scale(begin: const Offset(0.8, 0.8), end: const Offset(1, 1));
+  }
+}
+
+class _LevelUpDialog extends StatelessWidget {
+  final LevelUpEvent levelUp;
+  final VoidCallback onDismiss;
+
+  const _LevelUpDialog({
+    required this.levelUp,
+    required this.onDismiss,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      icon: Text(
+        PlayerTitle.getTitleForLevel(levelUp.newLevel).emoji,
+        style: const TextStyle(fontSize: 48),
+      ),
+      title: const Text('Level up!'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            'You reached level ${levelUp.newLevel}.',
+            style: Theme.of(context).textTheme.titleMedium,
+            textAlign: TextAlign.center,
+          ),
+          if (levelUp.hasUnlocks) ...[
+            const SizedBox(height: 16),
+            const Text('New rewards are ready in the Rewards section.'),
+          ],
+        ],
+      ),
+      actions: [
+        FilledButton(
+          onPressed: onDismiss,
+          child: const Text('Continue'),
+        ),
+      ],
+    );
   }
 }

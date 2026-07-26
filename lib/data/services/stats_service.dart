@@ -122,13 +122,12 @@ class StatsService {
   }
   
   /// Record task completion
-  void recordTaskCompletion({int stepsCompleted = 0}) {
+  void recordTaskCompletion() {
     final now = DateTime.now();
     final today = _dateToKey(now);
     
     // Increment totals
     totalTasksCompleted = totalTasksCompleted + 1;
-    totalStepsCompleted = totalStepsCompleted + stepsCompleted;
     
     // Update daily completions
     final daily = dailyCompletions;

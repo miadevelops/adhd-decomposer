@@ -35,12 +35,27 @@ class _PaywallScreenState extends State<PaywallScreen> {
   }
   
   Future<void> _loadPackages() async {
-    setState(() => _isLoadingPackages = true);
+    setState(() {
+      _isLoadingPackages = true;
+      _errorMessage = null;
+    });
     try {
       final purchaseService = Provider.of<PurchaseService>(context, listen: false);
-      await purchaseService.getOfferings();
+      final packages = await purchaseService.getOfferings();
+      if (packages.isEmpty && mounted) {
+        setState(() {
+          _errorMessage = 'Purchases are unavailable right now. Please try again later.';
+        });
+      }
+    } on PurchaseException catch (e) {
+      if (mounted) setState(() => _errorMessage = e.userMessage);
     } catch (e) {
       debugPrint('Error loading packages: $e');
+      if (mounted) {
+        setState(() {
+          _errorMessage = 'Unable to load prices. Check your connection and try again.';
+        });
+      }
     } finally {
       if (mounted) setState(() => _isLoadingPackages = false);
     }
@@ -280,9 +295,18 @@ class _PaywallScreenState extends State<PaywallScreen> {
   
   Widget _buildPurchaseButton(BuildContext context, PurchaseService purchaseService) {
     String buttonText;
+    final hasSelectedPackage = switch (_selectedOption) {
+      PricingOption.monthly => purchaseService.monthlyPackage != null,
+      PricingOption.yearly => purchaseService.yearlyPackage != null,
+      PricingOption.lifetime => purchaseService.lifetimePackage != null,
+    };
     
     if (_isLoading) {
       buttonText = 'Processing...';
+    } else if (_isLoadingPackages) {
+      buttonText = 'Loading prices...';
+    } else if (!hasSelectedPackage) {
+      buttonText = 'Retry loading prices';
     } else {
       final price = switch (_selectedOption) {
         PricingOption.monthly => purchaseService.monthlyPackage != null
@@ -319,7 +343,11 @@ class _PaywallScreenState extends State<PaywallScreen> {
         SizedBox(
           width: double.infinity,
           child: FilledButton(
-            onPressed: _isLoading || _isLoadingPackages ? null : () => _purchase(purchaseService),
+            onPressed: _isLoading || _isLoadingPackages
+                ? null
+                : hasSelectedPackage
+                    ? () => _purchase(purchaseService)
+                    : _loadPackages,
             style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14)),
             child: _isLoading
                 ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))

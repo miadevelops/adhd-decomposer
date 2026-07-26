@@ -40,8 +40,7 @@ extension AmbientSoundExtension on AmbientSound {
 
 /// Service for playing ambient background sounds during focus sessions.
 /// 
-/// Supports looping playback of cafe, rain, and white noise sounds
-/// with volume control and mute functionality.
+/// Supports looping playback of ambient sounds at system-controlled volume.
 class AmbientAudioService {
   static final AmbientAudioService _instance = AmbientAudioService._internal();
   factory AmbientAudioService() => _instance;
@@ -49,18 +48,11 @@ class AmbientAudioService {
 
   final AudioPlayer _player = AudioPlayer();
   AmbientSound _currentSound = AmbientSound.none;
-  double _volume = 0.5;
-  bool _isMuted = false;
   bool _isInitialized = false;
+  Future<void> _pendingOperation = Future.value();
 
   /// Current ambient sound being played
   AmbientSound get currentSound => _currentSound;
-  
-  /// Current volume (0.0 - 1.0)
-  double get volume => _volume;
-  
-  /// Whether audio is muted
-  bool get isMuted => _isMuted;
   
   /// Whether a sound is currently selected (not none)
   bool get isPlaying => _currentSound != AmbientSound.none;
@@ -78,24 +70,28 @@ class AmbientAudioService {
   /// If the same sound is already playing, this is a no-op.
   /// Pass [AmbientSound.none] to stop playback.
   Future<void> play(AmbientSound sound) async {
-    await initialize();
-    
-    if (sound == _currentSound) return;
-    
-    _currentSound = sound;
-    
-    if (sound == AmbientSound.none) {
-      await stop();
-      return;
-    }
-    
+    _pendingOperation = _pendingOperation.then((_) => _play(sound));
+    await _pendingOperation;
+  }
+
+  Future<void> _play(AmbientSound sound) async {
     try {
+      await initialize();
+
+      if (sound == _currentSound) return;
+
+      if (sound == AmbientSound.none) {
+        await _stopPlayer();
+        return;
+      }
+
       final assetPath = _getAssetPath(sound);
-      await _player.setVolume(_isMuted ? 0 : _volume);
+      await _player.stop();
+      await _player.setVolume(1.0);
       await _player.play(AssetSource(assetPath));
+      _currentSound = sound;
     } catch (e) {
       debugPrint('Error playing ambient sound: $e');
-      // Reset state on error
       _currentSound = AmbientSound.none;
     }
   }
@@ -103,41 +99,15 @@ class AmbientAudioService {
   /// Stop playback
   Future<void> stop() async {
     _currentSound = AmbientSound.none;
+    _pendingOperation = _pendingOperation.then((_) => _stopPlayer());
+    await _pendingOperation;
+  }
+
+  Future<void> _stopPlayer() async {
     try {
       await _player.stop();
     } catch (e) {
       debugPrint('Error stopping ambient sound: $e');
-    }
-  }
-
-  /// Set volume (0.0 - 1.0)
-  Future<void> setVolume(double value) async {
-    _volume = value.clamp(0.0, 1.0);
-    _isMuted = false;
-    try {
-      await _player.setVolume(_volume);
-    } catch (e) {
-      debugPrint('Error setting volume: $e');
-    }
-  }
-
-  /// Toggle mute state
-  Future<void> toggleMute() async {
-    _isMuted = !_isMuted;
-    try {
-      await _player.setVolume(_isMuted ? 0 : _volume);
-    } catch (e) {
-      debugPrint('Error toggling mute: $e');
-    }
-  }
-
-  /// Set mute state explicitly
-  Future<void> setMuted(bool muted) async {
-    _isMuted = muted;
-    try {
-      await _player.setVolume(_isMuted ? 0 : _volume);
-    } catch (e) {
-      debugPrint('Error setting mute: $e');
     }
   }
 

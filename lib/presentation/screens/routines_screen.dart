@@ -30,6 +30,7 @@ class _RoutinesScreenState extends State<RoutinesScreen> {
           Semantics(
             label: 'Create new routine',
             button: true,
+            excludeSemantics: true,
             child: IconButton(
               icon: const Icon(Icons.add),
               tooltip: 'New Routine',
@@ -114,6 +115,7 @@ class _RoutinesScreenState extends State<RoutinesScreen> {
       floatingActionButton: Semantics(
         label: 'Create new routine',
         button: true,
+        excludeSemantics: true,
         child: FloatingActionButton.extended(
           onPressed: () => _createNewRoutine(context),
           icon: const Icon(Icons.add),

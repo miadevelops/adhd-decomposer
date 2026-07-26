@@ -12,7 +12,6 @@ import 'settings_screen.dart';
 import 'stats_screen.dart';
 import 'templates_screen.dart';
 import 'routines_screen.dart';
-import 'profile_screen.dart';
 
 /// Minimum touch target size for accessibility (48x48dp per WCAG guidelines)
 const double kMinTouchTarget = 48.0;
@@ -22,8 +21,14 @@ class HomeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final userName = context.select<TaskProvider, String?>((provider) {
+      final name = provider.userName?.trim();
+      return name == null || name.isEmpty ? null : name;
+    });
+
     return Scaffold(
       appBar: AppBar(
+        centerTitle: false,
         title: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -37,34 +42,48 @@ class HomeScreen extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 10),
-            Semantics(
-              header: true,
-              child: const Text(AppStrings.appName),
+            Flexible(
+              child: Semantics(
+                header: true,
+                child: Text(
+                  userName ?? AppStrings.appName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
             ),
           ],
         ),
         actions: [
-          // Level badge - tappable to go to profile
+          // Level badge opens the combined profile and progress page.
           Consumer<XPService>(
             builder: (context, xpService, _) {
               return Semantics(
-                label: 'Level ${xpService.level}. Tap to view profile',
+                label: 'Level ${xpService.level}. Tap to view progress',
                 button: true,
                 child: InkWell(
                   onTap: () {
                     Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => const ProfileScreen()),
+                      MaterialPageRoute(builder: (_) => const StatsScreen()),
                     );
                   },
                   borderRadius: BorderRadius.circular(20),
                   child: Container(
-                    margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                    margin:
+                        const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                     decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
+                      color: Theme.of(context)
+                          .colorScheme
+                          .primary
+                          .withOpacity(0.1),
                       borderRadius: BorderRadius.circular(20),
                       border: Border.all(
-                        color: Theme.of(context).colorScheme.primary.withOpacity(0.3),
+                        color: Theme.of(context)
+                            .colorScheme
+                            .primary
+                            .withOpacity(0.3),
                       ),
                     ),
                     child: Row(
@@ -85,7 +104,10 @@ class HomeScreen extends StatelessWidget {
                           child: CircularProgressIndicator(
                             value: xpService.progressToNextLevel,
                             strokeWidth: 2.5,
-                            backgroundColor: Theme.of(context).colorScheme.primary.withOpacity(0.2),
+                            backgroundColor: Theme.of(context)
+                                .colorScheme
+                                .primary
+                                .withOpacity(0.2),
                             valueColor: AlwaysStoppedAnimation<Color>(
                               Theme.of(context).colorScheme.primary,
                             ),
@@ -101,6 +123,7 @@ class HomeScreen extends StatelessWidget {
           Semantics(
             label: 'View routines',
             button: true,
+            excludeSemantics: true,
             child: IconButton(
               icon: const Icon(Icons.repeat_rounded),
               tooltip: 'Routines',
@@ -112,21 +135,9 @@ class HomeScreen extends StatelessWidget {
             ),
           ),
           Semantics(
-            label: 'View statistics',
-            button: true,
-            child: IconButton(
-              icon: const Icon(Icons.bar_chart_rounded),
-              tooltip: 'Stats',
-              onPressed: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const StatsScreen()),
-                );
-              },
-            ),
-          ),
-          Semantics(
             label: 'Open settings',
             button: true,
+            excludeSemantics: true,
             child: IconButton(
               icon: const Icon(Icons.settings_outlined),
               tooltip: 'Settings',
@@ -150,6 +161,7 @@ class HomeScreen extends StatelessWidget {
           Semantics(
             label: 'Browse task templates',
             button: true,
+            excludeSemantics: true,
             child: SizedBox(
               height: kMinTouchTarget,
               child: FloatingActionButton.extended(
@@ -165,6 +177,7 @@ class HomeScreen extends StatelessWidget {
           Semantics(
             label: 'Create a new task',
             button: true,
+            excludeSemantics: true,
             child: SizedBox(
               height: kMinTouchTarget,
               child: FloatingActionButton.extended(
@@ -181,16 +194,18 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildBody(BuildContext context, TaskProvider taskProvider, RoutineService routineService, SettingsService settings) {
+  Widget _buildBody(BuildContext context, TaskProvider taskProvider,
+      RoutineService routineService, SettingsService settings) {
     final hasTasks = taskProvider.tasks.isNotEmpty;
     final hasRoutinesDue = routineService.hasRoutinesDue;
     final hasStreakCelebration = routineService.hasStreakCelebration;
-    
+
     if (!hasTasks && !hasRoutinesDue) {
       return _buildEmptyState(context, routineService);
     }
-    
-    return _buildTaskList(context, taskProvider, routineService, settings, hasRoutinesDue, hasStreakCelebration);
+
+    return _buildTaskList(context, taskProvider, routineService, settings,
+        hasRoutinesDue, hasStreakCelebration);
   }
 
   Widget _buildEmptyState(BuildContext context, RoutineService routineService) {
@@ -206,13 +221,15 @@ class HomeScreen extends StatelessWidget {
               const SizedBox(height: 32),
             ],
             Semantics(
-              label: 'No tasks yet. Use the buttons below to create a new task or browse templates.',
+              label:
+                  'No tasks yet. Use the buttons below to create a new task or browse templates.',
               child: Column(
                 children: [
                   Icon(
                     Icons.checklist_outlined,
                     size: 80,
-                    color: Theme.of(context).colorScheme.primary.withOpacity(0.5),
+                    color:
+                        Theme.of(context).colorScheme.primary.withOpacity(0.5),
                     semanticLabel: 'Empty checklist',
                   ),
                   const SizedBox(height: 24),
@@ -225,8 +242,8 @@ class HomeScreen extends StatelessWidget {
                   Text(
                     AppStrings.startByAdding,
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      height: 1.5,
-                    ),
+                          height: 1.5,
+                        ),
                     textAlign: TextAlign.center,
                   ),
                 ],
@@ -239,8 +256,8 @@ class HomeScreen extends StatelessWidget {
   }
 
   Widget _buildTaskList(
-    BuildContext context, 
-    TaskProvider provider, 
+    BuildContext context,
+    TaskProvider provider,
     RoutineService routineService,
     SettingsService settings,
     bool hasRoutinesDue,
@@ -256,11 +273,10 @@ class HomeScreen extends StatelessWidget {
         // Coach greeting card
         _CoachGreetingCard(),
         const SizedBox(height: 16),
-        
+
         // Streak celebration banner
-        if (hasStreakCelebration)
-          _buildStreakBanner(context, routineService),
-        
+        if (hasStreakCelebration) _buildStreakBanner(context, routineService),
+
         // Routines due today section
         if (hasRoutinesDue) ...[
           _RoutinesDueTodaySection(routineService: routineService),
@@ -270,7 +286,7 @@ class HomeScreen extends StatelessWidget {
           _RoutinesQuickAccess(routineService: routineService),
           const SizedBox(height: 24),
         ],
-        
+
         // Active tasks section
         if (activeTasks.isNotEmpty) ...[
           Semantics(
@@ -284,12 +300,12 @@ class HomeScreen extends StatelessWidget {
             ),
           ),
           ...activeTasks.map((task) => _TaskCard(
-            task: task,
-            onTap: () => _startTask(context, task),
-            onDelete: () => provider.deleteTask(task.id),
-          )),
+                task: task,
+                onTap: () => _startTask(context, task),
+                onDelete: () => provider.deleteTask(task.id),
+              )),
         ],
-        
+
         // Completed tasks section
         if (completedTasks.isNotEmpty) ...[
           const SizedBox(height: 24),
@@ -301,19 +317,23 @@ class HomeScreen extends StatelessWidget {
                 child: Text(
                   'Completed (${completedTasks.length})',
                   style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    color: Theme.of(context).colorScheme.primary,
-                  ),
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
                 ),
               ),
               Semantics(
-                label: showCompleted ? 'Hide completed tasks' : 'Show completed tasks',
+                label: showCompleted
+                    ? 'Hide completed tasks'
+                    : 'Show completed tasks',
                 button: true,
                 child: TextButton.icon(
                   onPressed: () {
                     settings.showCompletedTasks = !showCompleted;
                   },
                   icon: Icon(
-                    showCompleted ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                    showCompleted
+                        ? Icons.visibility_off_outlined
+                        : Icons.visibility_outlined,
                     size: 18,
                   ),
                   label: Text(showCompleted ? 'Hide' : 'Show'),
@@ -324,25 +344,28 @@ class HomeScreen extends StatelessWidget {
           const SizedBox(height: 8),
           if (showCompleted)
             ...completedTasks.map((task) => Opacity(
-              opacity: 0.7,
-              child: _TaskCard(
-                task: task,
-                onTap: null,
-                onDelete: () => provider.deleteTask(task.id),
-                isCompleted: true,
-              ),
-            )),
+                  opacity: 0.7,
+                  child: _TaskCard(
+                    task: task,
+                    onTap: null,
+                    onDelete: () => provider.deleteTask(task.id),
+                    isCompleted: true,
+                  ),
+                )),
         ],
       ],
     );
   }
 
-  Widget _buildStreakBanner(BuildContext context, RoutineService routineService) {
+  Widget _buildStreakBanner(
+      BuildContext context, RoutineService routineService) {
     final streakRoutines = routineService.celebratoryStreaks;
-    final longestStreak = streakRoutines.isNotEmpty 
-        ? streakRoutines.map((r) => r.completionStreak).reduce((a, b) => a > b ? a : b)
+    final longestStreak = streakRoutines.isNotEmpty
+        ? streakRoutines
+            .map((r) => r.completionStreak)
+            .reduce((a, b) => a > b ? a : b)
         : 0;
-    
+
     return Card(
       color: Theme.of(context).colorScheme.primaryContainer,
       margin: const EdgeInsets.only(bottom: 16),
@@ -366,8 +389,8 @@ class HomeScreen extends StatelessWidget {
                     Text(
                       '$longestStreak day streak!',
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
+                            fontWeight: FontWeight.bold,
+                          ),
                     ),
                     Text(
                       'Keep your routines going!',
@@ -413,7 +436,7 @@ class _RoutinesDueTodaySection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final dueRoutines = routineService.routinesDueToday;
-    
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -433,8 +456,8 @@ class _RoutinesDueTodaySection extends StatelessWidget {
                   Text(
                     'Routines Due Today',
                     style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      color: Colors.orange,
-                    ),
+                          color: Colors.orange,
+                        ),
                   ),
                 ],
               ),
@@ -451,17 +474,17 @@ class _RoutinesDueTodaySection extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         ...dueRoutines.take(3).map((routine) => _RoutineDueCard(
-          routine: routine,
-          onStart: () => _startRoutine(context, routine),
-        )),
+              routine: routine,
+              onStart: () => _startRoutine(context, routine),
+            )),
         if (dueRoutines.length > 3)
           Padding(
             padding: const EdgeInsets.only(top: 8),
             child: Text(
               '+${dueRoutines.length - 3} more routines',
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: Theme.of(context).textTheme.bodySmall?.color,
-              ),
+                    color: Theme.of(context).textTheme.bodySmall?.color,
+                  ),
             ),
           ),
       ],
@@ -472,7 +495,7 @@ class _RoutinesDueTodaySection extends StatelessWidget {
     final task = routine.toTask();
     context.read<TaskProvider>().addTask(task);
     context.read<TaskProvider>().setActiveTask(task);
-    
+
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => ExecuteScreen(
@@ -538,9 +561,10 @@ class _RoutineDueCard extends StatelessWidget {
                           const SizedBox(width: 8),
                           Text(
                             '🔥 ${routine.completionStreak}',
-                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              fontWeight: FontWeight.bold,
-                            ),
+                            style:
+                                Theme.of(context).textTheme.bodySmall?.copyWith(
+                                      fontWeight: FontWeight.bold,
+                                    ),
                           ),
                         ],
                       ],
@@ -551,7 +575,8 @@ class _RoutineDueCard extends StatelessWidget {
               ElevatedButton(
                 onPressed: onStart,
                 style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 ),
                 child: const Text('Start'),
               ),
@@ -573,7 +598,7 @@ class _RoutinesQuickAccess extends StatelessWidget {
   Widget build(BuildContext context) {
     final completedToday = routineService.routinesCompletedToday.length;
     final totalRoutines = routineService.routines.length;
-    
+
     return Card(
       child: InkWell(
         onTap: () {
@@ -632,7 +657,7 @@ class _RoutinesCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final dueCount = routineService.routinesDueToday.length;
     final totalCount = routineService.routines.length;
-    
+
     return Card(
       child: InkWell(
         onTap: () {
@@ -660,8 +685,8 @@ class _RoutinesCard extends StatelessWidget {
                       style: Theme.of(context).textTheme.titleMedium,
                     ),
                     Text(
-                      dueCount > 0 
-                          ? '$dueCount due today' 
+                      dueCount > 0
+                          ? '$dueCount due today'
                           : '$totalCount routines set up',
                       style: Theme.of(context).textTheme.bodyMedium,
                     ),
@@ -694,12 +719,12 @@ class _TaskCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final isCompleted = task.isCompleted;
     final progressPercent = (task.progress * 100).round();
-    
+
     // Build semantic label for screen readers
     final semanticLabel = isCompleted
         ? 'Completed task: ${task.title}. ${task.completedStepsCount} steps done.'
         : 'Task: ${task.title}. ${task.completedStepsCount} of ${task.steps.length} steps completed. Estimated ${task.totalEstimatedMinutes} minutes. ${progressPercent > 0 ? '$progressPercent percent complete.' : ''} Double tap to continue.';
-    
+
     return Semantics(
       label: semanticLabel,
       button: onTap != null,
@@ -719,13 +744,19 @@ class _TaskCard extends StatelessWidget {
                       child: ExcludeSemantics(
                         child: Text(
                           task.title,
-                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            decoration: isCompleted ? TextDecoration.lineThrough : null,
-                            color: isCompleted 
-                              ? Theme.of(context).textTheme.bodyMedium?.color 
-                              : null,
-                            height: 1.3, // Better line spacing
-                          ),
+                          style:
+                              Theme.of(context).textTheme.titleMedium?.copyWith(
+                                    decoration: isCompleted
+                                        ? TextDecoration.lineThrough
+                                        : null,
+                                    color: isCompleted
+                                        ? Theme.of(context)
+                                            .textTheme
+                                            .bodyMedium
+                                            ?.color
+                                        : null,
+                                    height: 1.3, // Better line spacing
+                                  ),
                         ),
                       ),
                     ),
@@ -787,7 +818,10 @@ class _TaskCard extends StatelessWidget {
                   ExcludeSemantics(
                     child: LinearProgressIndicator(
                       value: task.progress,
-                      backgroundColor: Theme.of(context).colorScheme.primary.withOpacity(0.2),
+                      backgroundColor: Theme.of(context)
+                          .colorScheme
+                          .primary
+                          .withOpacity(0.2),
                     ),
                   ),
                 ],
@@ -807,7 +841,7 @@ class _CoachGreetingCard extends StatelessWidget {
     return Consumer<TaskProvider>(
       builder: (context, provider, _) {
         final coach = provider.selectedCoach;
-        
+
         return Card(
           child: Padding(
             padding: const EdgeInsets.all(16),
@@ -830,7 +864,7 @@ class _CoachGreetingCard extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 16),
-                
+
                 // Greeting message
                 Expanded(
                   child: Column(
@@ -838,10 +872,11 @@ class _CoachGreetingCard extends StatelessWidget {
                     children: [
                       Text(
                         coach.name,
-                        style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                          color: Theme.of(context).colorScheme.primary,
-                          fontWeight: FontWeight.bold,
-                        ),
+                        style:
+                            Theme.of(context).textTheme.labelMedium?.copyWith(
+                                  color: Theme.of(context).colorScheme.primary,
+                                  fontWeight: FontWeight.bold,
+                                ),
                       ),
                       const SizedBox(height: 4),
                       Text(

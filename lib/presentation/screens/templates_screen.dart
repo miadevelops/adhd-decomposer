@@ -197,9 +197,14 @@ class _CategoryChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
+    return Semantics(
+      label: '$label category',
+      button: true,
+      selected: isSelected,
+      child: ExcludeSemantics(
+        child: GestureDetector(
+          onTap: onTap,
+          child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         decoration: BoxDecoration(
@@ -230,6 +235,8 @@ class _CategoryChip extends StatelessWidget {
             ),
           ],
         ),
+          ),
+        ),
       ),
     );
   }
@@ -248,9 +255,13 @@ class _TemplateCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: InkWell(
+    return Semantics(
+      label: '${template.title}. ${template.totalMinutes} minutes. ${template.steps.length} steps',
+      button: true,
+      child: ExcludeSemantics(
+        child: Card(
+          margin: const EdgeInsets.only(bottom: 12),
+          child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(16),
         child: Padding(
@@ -326,6 +337,8 @@ class _TemplateCard extends StatelessWidget {
                 color: Theme.of(context).colorScheme.primary,
               ),
             ],
+          ),
+        ),
           ),
         ),
       ),

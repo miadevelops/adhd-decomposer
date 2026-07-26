@@ -9,6 +9,18 @@ class SoundService {
 
   final AudioPlayer _player = AudioPlayer();
 
+  static const Map<String, String> _celebrationAssets = {
+    'default': 'sounds/task_complete.mp3',
+    'arcade': 'sounds/arcade_chime.mp3',
+    'nature': 'sounds/nature_chime.mp3',
+    'magic': 'sounds/magic_chime.mp3',
+  };
+
+  @visibleForTesting
+  static String celebrationAssetFor(String soundId) {
+    return _celebrationAssets[soundId] ?? _celebrationAssets['default']!;
+  }
+
   bool get _soundEnabled {
     try {
       final box = Hive.box('settings');
@@ -36,10 +48,10 @@ class SoundService {
     }
   }
 
-  Future<void> playTaskComplete() async {
+  Future<void> playTaskComplete({String soundId = 'default'}) async {
     if (!_celebrationSoundEnabled) return;
     try {
-      await _player.play(AssetSource('sounds/task_complete.mp3'));
+      await _player.play(AssetSource(celebrationAssetFor(soundId)));
     } catch (e) {
       debugPrint('Error playing sound: $e');
     }

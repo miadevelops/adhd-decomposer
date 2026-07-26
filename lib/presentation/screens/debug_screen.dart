@@ -107,13 +107,14 @@ class _DebugScreenState extends State<DebugScreen> {
           ),
           _toggleTile(
             icon: Icons.toggle_on,
-            label: 'Force premium ON (local)',
-            subtitle: 'Only overrides SettingsService cache',
-            value: settings.isPremium,
+            label: 'Force premium ON (debug)',
+            subtitle: 'Overrides the entitlement for this debug session',
+            value: purchases.isPremium,
             onChanged: (v) {
-              settings.isPremium = v;
+              purchases.setDebugPremiumOverride(v);
+              context.read<TaskProvider>().setPurchaseService(purchases);
               setState(() {});
-              _snack(context, 'Premium ${v ? "enabled" : "disabled"} (local cache)');
+              _snack(context, 'Premium ${v ? "enabled" : "disabled"} for this session');
             },
           ),
           _actionTile(

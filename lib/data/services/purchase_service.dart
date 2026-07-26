@@ -8,6 +8,7 @@ enum PurchaseErrorType {
   networkError,
   userCancelled,
   paymentDeclined,
+  purchaseUnavailable,
   productNotFound,
   alreadyPurchased,
   unknown,
@@ -32,6 +33,8 @@ class PurchaseException implements Exception {
         return 'Purchase cancelled.';
       case PurchaseErrorType.paymentDeclined:
         return 'Payment was declined. Please check your payment method and try again.';
+      case PurchaseErrorType.purchaseUnavailable:
+        return 'Purchases are unavailable on this device or account.';
       case PurchaseErrorType.productNotFound:
         return 'Product not available. Please try again later.';
       case PurchaseErrorType.alreadyPurchased:
@@ -59,14 +62,25 @@ class PurchaseService extends ChangeNotifier {
   bool _isInitialized = false;
   bool _isConfigured = false;
   bool _isPremium = false;
+  bool? _debugPremiumOverride;
   CustomerInfo? _customerInfo;
   List<Package> _availablePackages = [];
   
   bool get isInitialized => _isInitialized;
   bool get isConfigured => _isConfigured;
-  bool get isPremium => _isPremium;
+  bool get isPremium => _debugPremiumOverride ?? _isPremium;
   CustomerInfo? get customerInfo => _customerInfo;
   List<Package> get availablePackages => _availablePackages;
+
+  /// Override entitlement state for the current debug session.
+  void setDebugPremiumOverride(bool? value) {
+    if (!kDebugMode) return;
+    final wasPremium = isPremium;
+    _debugPremiumOverride = value;
+    if (wasPremium != isPremium) {
+      notifyListeners();
+    }
+  }
   
   /// Initialize RevenueCat SDK
   Future<void> initialize() async {
@@ -124,11 +138,11 @@ class PurchaseService extends ChangeNotifier {
   /// Update premium status based on customer info
   void _updatePremiumStatus(CustomerInfo info) {
     final entitlement = info.entitlements.active[_entitlementId];
-    final wasPremium = _isPremium;
+    final wasPremium = isPremium;
     _isPremium = entitlement != null;
     
-    if (wasPremium != _isPremium) {
-      debugPrint('PurchaseService: Premium status changed to $_isPremium');
+    if (wasPremium != isPremium) {
+      debugPrint('PurchaseService: Premium status changed to $isPremium');
       notifyListeners();
     }
   }
@@ -266,7 +280,7 @@ class PurchaseService extends ChangeNotifier {
         
       case PurchasesErrorCode.purchaseNotAllowedError:
         return PurchaseException(
-          PurchaseErrorType.paymentDeclined,
+          PurchaseErrorType.purchaseUnavailable,
           'Purchases not allowed on this device',
         );
         
