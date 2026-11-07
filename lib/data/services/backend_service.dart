@@ -15,6 +15,10 @@ class BackendService {
   static const Duration _aiTimeout = Duration(seconds: 35);
   static const Duration _shortTimeout = Duration(seconds: 15);
 
+  /// Tells the backend this build understands the lifetime free quota.
+  /// Requests without it get the legacy daily-limit behaviour.
+  static const Map<String, String> _clientHeader = {'X-TinySteps-Client': '2'};
+
   final http.Client _client;
 
   String? _token;
@@ -44,6 +48,7 @@ class BackendService {
 
   Map<String, String> _authHeaders({bool json = false}) => {
         if (json) 'Content-Type': 'application/json',
+        ..._clientHeader,
         'Authorization': 'Bearer ${_token ?? ''}',
       };
 
@@ -57,7 +62,7 @@ class BackendService {
       final response = await _client
           .post(
             Uri.parse('$_baseUrl/v1/register'),
-            headers: {'Content-Type': 'application/json'},
+            headers: {'Content-Type': 'application/json', ..._clientHeader},
           )
           .timeout(_shortTimeout);
 

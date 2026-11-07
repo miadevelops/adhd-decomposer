@@ -230,6 +230,21 @@ wrangler kv key get --binding USERS "feedback:<timestamp>:<deviceId>"
 - **Premium users:** Unlimited
 - **Everyone:** max 60 AI requests per device per hour, and max 10 registrations per IP per hour.
 
+### Older app builds
+
+Current app builds send `X-TinySteps-Client: 2` on every request. Requests without
+that header come from builds released before the lifetime quota and keep the original
+behaviour, so store users who haven't updated aren't affected:
+
+- `LEGACY_DAILY_LIMIT` (default 3) task breakdowns per UTC day; "I'm stuck" breakdowns are
+  not metered. Counts use the original `rate:{deviceId}:{date}` keys.
+- A `429` body of `{ success: false, error: "Daily limit reached", remaining: 0, resetAt, usage }`.
+- `/v1/usage` also returns `resetAt` / `resetsAt`.
+- Devices linked to an active RevenueCat entitlement are unlimited on either path.
+
+Set `LEGACY_DAILY_LIMIT = "0"` to switch everyone to the lifetime quota once old builds
+are no longer in use.
+
 ## Caching
 
 Common task decompositions are cached for 24 hours to:
@@ -272,6 +287,7 @@ request re-checks RevenueCat (purchases, renewals, cancellations, expirations, t
 | `REVENUECAT_API_KEY` | RevenueCat secret API key for entitlement checks (secret) |
 | `REVENUECAT_WEBHOOK_SECRET` | Expected webhook Authorization header (secret) |
 | `FREE_LIFETIME_LIMIT` | Total free AI breakdowns per device |
+| `LEGACY_DAILY_LIMIT` | Daily free breakdowns for pre-lifetime-quota app builds (`0` disables legacy mode) |
 | `REVENUECAT_ENTITLEMENT_ID` | Entitlement that grants premium |
 | `CACHE_TTL_SECONDS` | How long to cache responses |
 

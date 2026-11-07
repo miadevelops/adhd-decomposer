@@ -1,8 +1,11 @@
-import { Env, UsageEntry } from './types';
+import { Env, UsageEntry, LegacyDailyEntry } from './types';
 
 const USAGE_PREFIX = 'usage:';
 const THROTTLE_PREFIX = 'throttle:';
+// Same key format the pre-1.2 backend used, so today's counts carry over.
+const LEGACY_DAILY_PREFIX = 'rate:';
 const DEFAULT_FREE_LIMIT = 5;
+const DEFAULT_LEGACY_DAILY_LIMIT = 3;
 
 export interface QuotaStatus {
   allowed: boolean;
@@ -63,6 +66,82 @@ export async function refundUsage(env: Env, deviceId: string): Promise<void> {
   const used = await getUsedCount(env, deviceId);
   if (used > 0) {
     await setUsedCount(env, deviceId, used - 1);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Legacy daily limit for app versions released before the lifetime quota.
+// Those clients never link their RevenueCat id, so they keep the original
+// "N decompositions per UTC day, sub-steps unlimited" behaviour.
+// ---------------------------------------------------------------------------
+
+export interface LegacyQuotaStatus extends QuotaStatus {
+  /** ISO timestamp of the next UTC midnight */
+  resetsAt: string;
+}
+
+export function getLegacyDailyLimit(env: Env): number {
+  const parsed = parseInt(env.LEGACY_DAILY_LIMIT ?? '', 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : DEFAULT_LEGACY_DAILY_LIMIT;
+}
+
+function utcToday(): string {
+  return new Date().toISOString().split('T')[0];
+}
+
+function legacyKey(deviceId: string, day: string): string {
+  return `${LEGACY_DAILY_PREFIX}${deviceId}:${day}`;
+}
+
+function nextUtcMidnight(): string {
+  const tomorrow = new Date();
+  tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+  tomorrow.setUTCHours(0, 0, 0, 0);
+  return tomorrow.toISOString();
+}
+
+async function getLegacyUsed(env: Env, deviceId: string, day: string): Promise<number> {
+  const entry = await env.RATE_LIMITS.get<LegacyDailyEntry>(legacyKey(deviceId, day), 'json');
+  return entry?.count ?? 0;
+}
+
+async function setLegacyUsed(env: Env, deviceId: string, day: string, count: number): Promise<void> {
+  await env.RATE_LIMITS.put(
+    legacyKey(deviceId, day),
+    JSON.stringify({ count, date: day } satisfies LegacyDailyEntry),
+    { expirationTtl: 86400 + 3600 }
+  );
+}
+
+function legacyStatus(used: number, limit: number): LegacyQuotaStatus {
+  return { ...status(used, limit), resetsAt: nextUtcMidnight() };
+}
+
+export async function getLegacyQuota(
+  env: Env,
+  deviceId: string,
+  isPremium: boolean
+): Promise<LegacyQuotaStatus> {
+  if (isPremium) return { ...UNLIMITED, resetsAt: '' };
+  return legacyStatus(await getLegacyUsed(env, deviceId, utcToday()), getLegacyDailyLimit(env));
+}
+
+export async function reserveLegacyUsage(env: Env, deviceId: string): Promise<LegacyQuotaStatus> {
+  const day = utcToday();
+  const limit = getLegacyDailyLimit(env);
+  const used = await getLegacyUsed(env, deviceId, day);
+  if (used >= limit) {
+    return legacyStatus(used, limit);
+  }
+  await setLegacyUsed(env, deviceId, day, used + 1);
+  return { ...legacyStatus(used + 1, limit), allowed: true };
+}
+
+export async function refundLegacyUsage(env: Env, deviceId: string): Promise<void> {
+  const day = utcToday();
+  const used = await getLegacyUsed(env, deviceId, day);
+  if (used > 0) {
+    await setLegacyUsed(env, deviceId, day, used - 1);
   }
 }
 

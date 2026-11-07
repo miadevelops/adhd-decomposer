@@ -28,5 +28,8 @@ id = "bc440f00f5134b0da4e17b05100ecf33"
 ENVIRONMENT = "production"
 # Lifetime number of free AI breakdowns per device (task + "I'm stuck" breakdowns)
 FREE_LIFETIME_LIMIT = "5"
+# Daily free decompositions for app builds that predate the lifetime quota (requests
+# without the X-TinySteps-Client header). Set to "0" once old builds are retired.
+LEGACY_DAILY_LIMIT = "3"
 REVENUECAT_ENTITLEMENT_ID = "entl2de33d59e5"
 CACHE_TTL_SECONDS = "86400"

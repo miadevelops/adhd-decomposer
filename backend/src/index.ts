@@ -1,6 +1,17 @@
 import { Env, TokenPayload, DecomposeRequest, DecomposeResponse, UsageResponse } from './types';
 import { createToken, verifyToken, generateDeviceId } from './auth';
-import { getQuota, reserveUsage, refundUsage, throttle, QuotaStatus } from './ratelimit';
+import {
+  getQuota,
+  reserveUsage,
+  refundUsage,
+  throttle,
+  QuotaStatus,
+  getLegacyDailyLimit,
+  getLegacyQuota,
+  reserveLegacyUsage,
+  refundLegacyUsage,
+  LegacyQuotaStatus,
+} from './ratelimit';
 import { getCachedResponse, cacheResponse, decomposeTask, getSubSteps } from './openai';
 import { isDevicePremium, linkRevenueCatUser, invalidatePremium } from './premium';
 
@@ -20,7 +31,7 @@ const VALID_ENERGY = ['low', 'medium', 'high'] as const;
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-TinySteps-Client',
   'Access-Control-Max-Age': '86400',
 };
 
@@ -49,6 +60,30 @@ function freeLimitResponse(quota: QuotaStatus): Response {
       error: 'Free breakdowns used up',
       code: 'FREE_LIMIT_REACHED',
       usage: usageBody(quota),
+    },
+    429
+  );
+}
+
+/**
+ * App versions that understand the lifetime free quota send this header.
+ * Older store builds don't, and keep the original daily-limit behaviour.
+ */
+const CLIENT_HEADER = 'X-TinySteps-Client';
+
+function isLegacyClient(request: Request, env: Env): boolean {
+  return !request.headers.get(CLIENT_HEADER) && getLegacyDailyLimit(env) > 0;
+}
+
+function legacyLimitResponse(quota: LegacyQuotaStatus): Response {
+  // Shape matches what pre-1.2 clients parse (`resetAt`, `remaining`, `usage`).
+  return jsonResponse(
+    {
+      success: false,
+      error: 'Daily limit reached',
+      remaining: 0,
+      resetAt: quota.resetsAt,
+      usage: { used: quota.used, limit: quota.limit, resetsAt: quota.resetsAt },
     },
     429
   );
@@ -114,29 +149,51 @@ export function validateDecomposeRequest(body: unknown): DecomposeRequest | null
   };
 }
 
+type AiGate =
+  | { error: Response }
+  | { quota: QuotaStatus; refund: () => Promise<void> };
+
+const NO_REFUND = async (): Promise<void> => {};
+
 /**
  * Shared gate for AI endpoints: abuse throttle, then (for free users) reserve
- * one of the lifetime free breakdowns. Returns an error Response to send, or the
- * state needed to refund on failure.
+ * one free use. Returns an error Response to send, or the quota plus a refund
+ * callback to call if the request ultimately fails.
+ *
+ * Legacy clients get the original behaviour: a daily decompose limit and
+ * unmetered sub-steps.
  */
 async function gateAiRequest(
   env: Env,
-  deviceId: string
-): Promise<{ error: Response } | { isPremium: boolean; quota: QuotaStatus }> {
+  deviceId: string,
+  kind: 'decompose' | 'substeps',
+  legacy: boolean
+): Promise<AiGate> {
   if (!(await throttle(env, `ai:${deviceId}`, AI_REQUESTS_PER_HOUR, 3600))) {
     return { error: throttledResponse() };
   }
 
   const isPremium = await isDevicePremium(env, deviceId);
   if (isPremium) {
-    return { isPremium, quota: await getQuota(env, deviceId, true) };
+    return { quota: await getQuota(env, deviceId, true), refund: NO_REFUND };
+  }
+
+  if (legacy) {
+    if (kind === 'substeps') {
+      return { quota: await getLegacyQuota(env, deviceId, false), refund: NO_REFUND };
+    }
+    const quota = await reserveLegacyUsage(env, deviceId);
+    if (!quota.allowed) {
+      return { error: legacyLimitResponse(quota) };
+    }
+    return { quota, refund: () => refundLegacyUsage(env, deviceId) };
   }
 
   const quota = await reserveUsage(env, deviceId);
   if (!quota.allowed) {
     return { error: freeLimitResponse(quota) };
   }
-  return { isPremium, quota };
+  return { quota, refund: () => refundUsage(env, deviceId) };
 }
 
 // Route handlers
@@ -174,7 +231,7 @@ async function handleDecompose(request: Request, env: Env): Promise<Response> {
     return errorResponse('Invalid request: task is required (max 500 chars)');
   }
 
-  const gate = await gateAiRequest(env, auth.deviceId);
+  const gate = await gateAiRequest(env, auth.deviceId, 'decompose', isLegacyClient(request, env));
   if ('error' in gate) return gate.error;
 
   let result: DecomposeResponse;
@@ -190,12 +247,12 @@ async function handleDecompose(request: Request, env: Env): Promise<Response> {
       }
     }
   } catch (error) {
-    if (!gate.isPremium) await refundUsage(env, auth.deviceId);
+    await gate.refund();
     throw error;
   }
 
   if (!result.success) {
-    if (!gate.isPremium) await refundUsage(env, auth.deviceId);
+    await gate.refund();
     return jsonResponse(result, 502);
   }
 
@@ -228,19 +285,19 @@ async function handleSubSteps(request: Request, env: Env): Promise<Response> {
       ? body.taskContext.trim().slice(0, MAX_TASK_CONTEXT_CHARS)
       : undefined;
 
-  const gate = await gateAiRequest(env, auth.deviceId);
+  const gate = await gateAiRequest(env, auth.deviceId, 'substeps', isLegacyClient(request, env));
   if ('error' in gate) return gate.error;
 
   let result: Awaited<ReturnType<typeof getSubSteps>>;
   try {
     result = await getSubSteps(env, body.step.trim(), taskContext);
   } catch (error) {
-    if (!gate.isPremium) await refundUsage(env, auth.deviceId);
+    await gate.refund();
     throw error;
   }
 
   if (!result.success) {
-    if (!gate.isPremium) await refundUsage(env, auth.deviceId);
+    await gate.refund();
     return jsonResponse(result, 502);
   }
 
@@ -254,6 +311,15 @@ async function handleUsage(request: Request, env: Env): Promise<Response> {
   }
 
   const isPremium = await isDevicePremium(env, auth.deviceId);
+  if (isLegacyClient(request, env)) {
+    const legacy = await getLegacyQuota(env, auth.deviceId, isPremium);
+    return jsonResponse({
+      ...usageBody(legacy),
+      isPremium,
+      resetsAt: legacy.resetsAt,
+      resetAt: legacy.resetsAt || null,
+    });
+  }
   const quota = await getQuota(env, auth.deviceId, isPremium);
   const body: UsageResponse = { ...usageBody(quota), isPremium };
   return jsonResponse(body);

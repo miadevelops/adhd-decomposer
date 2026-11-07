@@ -16,6 +16,9 @@ export interface Env {
   // Config
   ENVIRONMENT: string;
   FREE_LIFETIME_LIMIT: string;
+  // Daily decompose limit for app versions that predate the lifetime quota
+  // (requests without the X-TinySteps-Client header). "0" disables legacy mode.
+  LEGACY_DAILY_LIMIT?: string;
   REVENUECAT_ENTITLEMENT_ID: string;
   CACHE_TTL_SECONDS: string;
 }
@@ -66,6 +69,12 @@ export interface TokenPayload {
 
 export interface UsageEntry {
   count: number;
+}
+
+/** Per-day counter used by legacy (pre-lifetime-quota) app versions. */
+export interface LegacyDailyEntry {
+  count: number;
+  date: string;
 }
 
 export interface DeviceRecord {
