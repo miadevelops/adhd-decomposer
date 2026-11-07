@@ -43,6 +43,7 @@ class _ExecuteScreenState extends State<ExecuteScreen>
   final GlobalKey _shareCardKey = GlobalKey();
   Timer? _timer;
   int _secondsRemaining = 0;
+  final ValueNotifier<int> _countdownTick = ValueNotifier(0);
   bool _timerRunning = false;
   int? _selectedMinutes;
   // Timers are driven by the wall clock so they stay accurate when the app
@@ -86,6 +87,7 @@ class _ExecuteScreenState extends State<ExecuteScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _confettiController.dispose();
+    _countdownTick.dispose();
     _timer?.cancel();
     _stepTimer?.cancel();
     super.dispose();
@@ -724,6 +726,13 @@ class _ExecuteScreenState extends State<ExecuteScreen>
   }
 
   Widget _buildActiveTimer(BuildContext context) {
+    return ValueListenableBuilder<int>(
+      valueListenable: _countdownTick,
+      builder: (context, _, __) => _buildActiveTimerContent(context),
+    );
+  }
+
+  Widget _buildActiveTimerContent(BuildContext context) {
     final minutes = _secondsRemaining ~/ 60;
     final seconds = _secondsRemaining % 60;
     final timeString =
@@ -795,7 +804,9 @@ class _ExecuteScreenState extends State<ExecuteScreen>
 
     if (remaining > 0) {
       if (remaining != _secondsRemaining) {
-        setState(() => _secondsRemaining = remaining);
+        // Only the countdown display listens; no full-screen rebuild.
+        _secondsRemaining = remaining;
+        _countdownTick.value++;
       }
       return;
     }

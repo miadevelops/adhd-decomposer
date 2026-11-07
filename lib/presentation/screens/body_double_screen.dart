@@ -34,6 +34,7 @@ class _BodyDoubleScreenState extends State<BodyDoubleScreen>
   // Timer - Pomodoro style
   Timer? _timer;
   int _secondsRemaining = 25 * 60; // 25 minutes default
+  final ValueNotifier<int> _countdownTick = ValueNotifier(0);
   bool _isWorkSession = true;
   bool _timerRunning = false;
   // Wall-clock end time so the countdown stays accurate in the background.
@@ -197,6 +198,7 @@ class _BodyDoubleScreenState extends State<BodyDoubleScreen>
     _hideControlsTimer?.cancel();
     _pulseController.dispose();
     _particleController.dispose();
+    _countdownTick.dispose();
     _ambientAudio.stop();
     
     // Restore system UI
@@ -680,6 +682,23 @@ class _BodyDoubleScreenState extends State<BodyDoubleScreen>
     double timeFontSize = 48,
     bool compact = false,
   }) {
+    return ValueListenableBuilder<int>(
+      valueListenable: _countdownTick,
+      builder: (context, _, __) => _buildTimerContent(
+        context,
+        ringSize: ringSize,
+        timeFontSize: timeFontSize,
+        compact: compact,
+      ),
+    );
+  }
+
+  Widget _buildTimerContent(
+    BuildContext context, {
+    required double ringSize,
+    required double timeFontSize,
+    required bool compact,
+  }) {
     final minutes = _secondsRemaining ~/ 60;
     final seconds = _secondsRemaining % 60;
     final timeString = '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
@@ -1069,7 +1088,9 @@ class _BodyDoubleScreenState extends State<BodyDoubleScreen>
     final remaining = remainingMs <= 0 ? 0 : (remainingMs / 1000).ceil();
     if (remaining > 0) {
       if (remaining != _secondsRemaining) {
-        setState(() => _secondsRemaining = remaining);
+        // Only the countdown display listens; no full-screen rebuild.
+        _secondsRemaining = remaining;
+        _countdownTick.value++;
       }
       return;
     }

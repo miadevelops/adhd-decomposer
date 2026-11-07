@@ -46,4 +46,27 @@ void main() {
     stats.recordTaskCompletion();
     expect(stats.currentStreak, 1);
   });
+
+  test('cached JSON values stay correct across writes and caller edits',
+      () async {
+    final stats = StatsService();
+    await stats.initialize();
+
+    stats.templatesUsed = {'a'};
+    expect(stats.templatesUsed, {'a'});
+
+    // Mutating a returned value must not leak into the cache.
+    stats.templatesUsed.add('b');
+    stats.dailyCompletions['2020-01-01'] = 9;
+    expect(stats.templatesUsed, {'a'});
+    expect(stats.dailyCompletions.containsKey('2020-01-01'), isFalse);
+
+    stats.templatesUsed = {'a', 'c'};
+    expect(stats.templatesUsed, {'a', 'c'});
+
+    // A write that bypasses the setter is still picked up.
+    await Hive.box('stats')
+        .put(StatsService.keyDailyCompletions, '{"2020-01-02":3}');
+    expect(stats.dailyCompletions, {'2020-01-02': 3});
+  });
 }

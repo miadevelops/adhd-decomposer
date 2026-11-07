@@ -7,7 +7,18 @@ class SoundService {
   factory SoundService() => _instance;
   SoundService._internal();
 
-  final AudioPlayer _player = AudioPlayer();
+  // One player per channel so a celebration doesn't cut off the step chime.
+  // Created lazily, and again after dispose().
+  final Map<String, AudioPlayer> _players = {};
+
+  Future<void> _play(String channel, String asset) async {
+    try {
+      final player = _players.putIfAbsent(channel, AudioPlayer.new);
+      await player.play(AssetSource(asset));
+    } catch (e) {
+      debugPrint('Error playing sound: $e');
+    }
+  }
 
   static const Map<String, String> _celebrationAssets = {
     'default': 'sounds/task_complete.mp3',
@@ -41,43 +52,30 @@ class SoundService {
 
   Future<void> playStepComplete() async {
     if (!_soundEnabled) return;
-    try {
-      await _player.play(AssetSource('sounds/step_complete.mp3'));
-    } catch (e) {
-      debugPrint('Error playing sound: $e');
-    }
+    await _play('step', 'sounds/step_complete.mp3');
   }
 
   Future<void> playTaskComplete({String soundId = 'default'}) async {
     if (!_soundEnabled || !_celebrationSoundEnabled) return;
-    try {
-      await _player.play(AssetSource(celebrationAssetFor(soundId)));
-    } catch (e) {
-      debugPrint('Error playing sound: $e');
-    }
+    await _play('celebration', celebrationAssetFor(soundId));
   }
 
   Future<void> playTimerEnd() async {
     if (!_soundEnabled) return;
-    try {
-      await _player.play(AssetSource('sounds/timer_end.mp3'));
-    } catch (e) {
-      debugPrint('Error playing sound: $e');
-    }
+    await _play('timer', 'sounds/timer_end.mp3');
   }
 
   /// Play a gentle nudge sound for time blindness alerts
   Future<void> playTimeWarning() async {
     if (!_soundEnabled) return;
-    try {
-      // Use step_complete as a gentle nudge (softer than timer_end)
-      await _player.play(AssetSource('sounds/step_complete.mp3'));
-    } catch (e) {
-      debugPrint('Error playing sound: $e');
-    }
+    // Use step_complete as a gentle nudge (softer than timer_end)
+    await _play('step', 'sounds/step_complete.mp3');
   }
 
   void dispose() {
-    _player.dispose();
+    for (final player in _players.values) {
+      player.dispose();
+    }
+    _players.clear();
   }
 }

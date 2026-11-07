@@ -126,8 +126,10 @@ class PurchaseService extends ChangeNotifier {
       
       _isConfigured = true;
       
-      // Get initial customer info
-      await checkPremiumStatus();
+      // Get initial customer info, but don't hold app launch on a slow
+      // network; the check keeps running and notifies listeners when done.
+      await checkPremiumStatus()
+          .timeout(const Duration(seconds: 2), onTimeout: () {});
       
       _isInitialized = true;
       debugPrint('PurchaseService: Initialized successfully');

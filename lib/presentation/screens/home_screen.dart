@@ -139,9 +139,12 @@ class HomeScreen extends StatelessWidget {
           ),
         ],
       ),
-      body: Consumer3<TaskProvider, RoutineService, SettingsService>(
-        builder: (context, taskProvider, routineService, settings, _) {
-          return _buildBody(context, taskProvider, routineService, settings);
+      body: Consumer2<TaskProvider, RoutineService>(
+        builder: (context, taskProvider, routineService, _) {
+          // Home shows only one setting; don't rebuild for unrelated changes.
+          context.select<SettingsService, bool>((s) => s.showCompletedTasks);
+          return _buildBody(context, taskProvider, routineService,
+              context.read<SettingsService>());
         },
       ),
       floatingActionButton: Row(

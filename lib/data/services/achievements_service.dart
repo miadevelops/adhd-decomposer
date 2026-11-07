@@ -61,7 +61,7 @@ class AchievementsService extends ChangeNotifier {
   }
 
   /// All available achievements
-  static List<Achievement> get allAchievements => [
+  static final List<Achievement> allAchievements = List.unmodifiable([
         Achievement(
           id: 'first_step',
           title: 'First Step',
@@ -148,14 +148,21 @@ class AchievementsService extends ChangeNotifier {
           currentValue: (stats) => stats.templatesUsed.length,
           checkUnlocked: (stats, _) => stats.templatesUsed.length >= 5,
         ),
-      ];
+      ]);
+
+  // Decoded unlocked IDs, reused while the stored string is unchanged.
+  Object? _unlockedRaw;
+  Set<String> _unlockedCache = const {};
 
   /// Get set of unlocked achievement IDs
   Set<String> get unlockedAchievementIds {
     final stored = _safeBox.get(keyUnlockedAchievements);
     if (stored == null) return {};
+    if (stored == _unlockedRaw) return Set.of(_unlockedCache);
     try {
-      return Set<String>.from(jsonDecode(stored) as List);
+      _unlockedCache = Set<String>.from(jsonDecode(stored) as List);
+      _unlockedRaw = stored;
+      return Set.of(_unlockedCache);
     } catch (e) {
       debugPrint('AchievementsService: could not read unlocked achievements: $e');
       // Keep a copy so the next write doesn't destroy it

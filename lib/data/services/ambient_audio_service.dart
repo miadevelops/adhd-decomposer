@@ -46,7 +46,9 @@ class AmbientAudioService {
   factory AmbientAudioService() => _instance;
   AmbientAudioService._internal();
 
-  final AudioPlayer _player = AudioPlayer();
+  AudioPlayer? _audioPlayer;
+  // Recreated lazily so the service still works after dispose().
+  AudioPlayer get _player => _audioPlayer ??= AudioPlayer();
   AmbientSound _currentSound = AmbientSound.none;
   bool _isInitialized = false;
   Future<void> _pendingOperation = Future.value();
@@ -113,9 +115,13 @@ class AmbientAudioService {
 
   /// Dispose of resources
   Future<void> dispose() async {
-    await _player.stop();
-    await _player.dispose();
+    final player = _audioPlayer;
+    _audioPlayer = null;
+    _currentSound = AmbientSound.none;
     _isInitialized = false;
+    if (player == null) return;
+    await player.stop();
+    await player.dispose();
   }
 
   /// Get asset path for a sound

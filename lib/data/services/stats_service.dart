@@ -83,12 +83,21 @@ class StatsService {
   int get totalBodyDoubleMinutes => _safeBox.get(keyTotalBodyDoubleMinutes, defaultValue: 0);
   set totalBodyDoubleMinutes(int value) => _safeBox.put(keyTotalBodyDoubleMinutes, value);
   
+  // Decoded JSON values, reused while the stored string is unchanged.
+  Object? _templatesUsedRaw;
+  Set<String> _templatesUsedCache = const {};
+  Object? _dailyCompletionsRaw;
+  Map<String, int> _dailyCompletionsCache = const {};
+
   // Templates used (stored as JSON list)
   Set<String> get templatesUsed {
     final stored = _safeBox.get(keyTemplatesUsed);
     if (stored == null) return {};
+    if (stored == _templatesUsedRaw) return Set.of(_templatesUsedCache);
     try {
-      return Set<String>.from(jsonDecode(stored) as List);
+      _templatesUsedCache = Set<String>.from(jsonDecode(stored) as List);
+      _templatesUsedRaw = stored;
+      return Set.of(_templatesUsedCache);
     } catch (e) {
       _backupCorrupt(keyTemplatesUsed, stored, e);
       return {};
@@ -103,9 +112,13 @@ class StatsService {
   Map<String, int> get dailyCompletions {
     final stored = _safeBox.get(keyDailyCompletions);
     if (stored == null) return {};
+    if (stored == _dailyCompletionsRaw) return Map.of(_dailyCompletionsCache);
     try {
       final decoded = jsonDecode(stored) as Map<String, dynamic>;
-      return decoded.map((k, v) => MapEntry(k, (v as num).toInt()));
+      _dailyCompletionsCache =
+          decoded.map((k, v) => MapEntry(k, (v as num).toInt()));
+      _dailyCompletionsRaw = stored;
+      return Map.of(_dailyCompletionsCache);
     } catch (e) {
       _backupCorrupt(keyDailyCompletions, stored, e);
       return {};
