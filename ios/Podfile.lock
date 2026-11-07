@@ -6,26 +6,7 @@ PODS:
   - Flutter (1.0.0)
   - flutter_local_notifications (0.0.1):
     - Flutter
-  - flutter_native_splash (2.4.3):
-    - Flutter
   - home_widget (0.0.1):
-    - Flutter
-  - in_app_review (2.0.0):
-    - Flutter
-  - integration_test (0.0.1):
-    - Flutter
-  - path_provider_foundation (0.0.1):
-    - Flutter
-    - FlutterMacOS
-  - purchases_flutter (10.4.2):
-    - Flutter
-    - PurchasesHybridCommon (= 18.22.1)
-  - PurchasesHybridCommon (18.22.1):
-    - RevenueCat (= 5.81.0)
-  - RevenueCat (5.81.0)
-  - share_plus (0.0.1):
-    - Flutter
-  - url_launcher_ios (0.0.1):
     - Flutter
 
 DEPENDENCIES:
@@ -33,19 +14,7 @@ DEPENDENCIES:
   - device_calendar (from `.symlinks/plugins/device_calendar/ios`)
   - Flutter (from `Flutter`)
   - flutter_local_notifications (from `.symlinks/plugins/flutter_local_notifications/ios`)
-  - flutter_native_splash (from `.symlinks/plugins/flutter_native_splash/ios`)
   - home_widget (from `.symlinks/plugins/home_widget/ios`)
-  - in_app_review (from `.symlinks/plugins/in_app_review/ios`)
-  - integration_test (from `.symlinks/plugins/integration_test/ios`)
-  - path_provider_foundation (from `.symlinks/plugins/path_provider_foundation/darwin`)
-  - purchases_flutter (from `.symlinks/plugins/purchases_flutter/ios`)
-  - share_plus (from `.symlinks/plugins/share_plus/ios`)
-  - url_launcher_ios (from `.symlinks/plugins/url_launcher_ios/ios`)
-
-SPEC REPOS:
-  trunk:
-    - PurchasesHybridCommon
-    - RevenueCat
 
 EXTERNAL SOURCES:
   audioplayers_darwin:
@@ -56,38 +25,15 @@ EXTERNAL SOURCES:
     :path: Flutter
   flutter_local_notifications:
     :path: ".symlinks/plugins/flutter_local_notifications/ios"
-  flutter_native_splash:
-    :path: ".symlinks/plugins/flutter_native_splash/ios"
   home_widget:
     :path: ".symlinks/plugins/home_widget/ios"
-  in_app_review:
-    :path: ".symlinks/plugins/in_app_review/ios"
-  integration_test:
-    :path: ".symlinks/plugins/integration_test/ios"
-  path_provider_foundation:
-    :path: ".symlinks/plugins/path_provider_foundation/darwin"
-  purchases_flutter:
-    :path: ".symlinks/plugins/purchases_flutter/ios"
-  share_plus:
-    :path: ".symlinks/plugins/share_plus/ios"
-  url_launcher_ios:
-    :path: ".symlinks/plugins/url_launcher_ios/ios"
 
 SPEC CHECKSUMS:
   audioplayers_darwin: ccf9c770ee768abb07e26d90af093f7bab1c12ab
   device_calendar: b55b2c5406cfba45c95a59f9059156daee1f74ed
   Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
   flutter_local_notifications: ad39620c743ea4c15127860f4b5641649a988100
-  flutter_native_splash: c32d145d68aeda5502d5f543ee38c192065986cf
   home_widget: f169fc41fd807b4d46ab6615dc44d62adbf9f64f
-  in_app_review: 7dd1ea365263f834b8464673f9df72c80c17c937
-  integration_test: 4a889634ef21a45d28d50d622cf412dc6d9f586e
-  path_provider_foundation: 080d55be775b7414fd5a5ef3ac137b97b097e564
-  purchases_flutter: 64c9e64676b8b681ced103755d6989bec7fbad0c
-  PurchasesHybridCommon: 5759975e7b63c093772fd92d8a9e5edbc6a809a8
-  RevenueCat: c692d9b9d123ce98acea28796abcd81f63e9f34a
-  share_plus: 50da8cb520a8f0f65671c6c6a99b3617ed10a58a
-  url_launcher_ios: 694010445543906933d732453a59da0a173ae33d
 
 PODFILE CHECKSUM: 047afc841a2934f3171af4907d597b2d0b827387
 

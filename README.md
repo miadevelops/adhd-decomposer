@@ -63,7 +63,10 @@ Each step shown one at a time. Confetti when you complete one. No guilt if you s
 
 - Flutter 3.24+ (tested with 3.47)
 - Dart 3.5+
-- Android SDK 34+
+- Android SDK 36+
+- JDK 17+ for Android builds
+
+Android builds use the checked-in Gradle 8.14.3 wrapper, Android Gradle Plugin 8.11.1, and Kotlin 2.2.20; no separate Gradle installation is needed.
 
 ### Installation
 
