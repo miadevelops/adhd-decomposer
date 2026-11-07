@@ -1,4 +1,4 @@
-import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../../data/services/widget_service.dart';
@@ -19,19 +19,19 @@ class _FeaturesPreviewPageState extends State<FeaturesPreviewPage> {
   bool _pinRequested = false;
   
   final List<_Feature> _features = [
-    _Feature(
+    const _Feature(
       icon: Icons.timer_outlined,
       title: 'Time Blindness Alerts',
       description: '"You\'ve been on this 10 min"\n\nGentle nudges to keep you aware of time — no guilt, just awareness.',
       color: Color(0xFF4ECDC4),
     ),
-    _Feature(
+    const _Feature(
       icon: Icons.people_outline,
       title: 'Body Double Mode',
       description: 'Ambient sounds + focus timer.\n\nLike having someone work alongside you.',
       color: Color(0xFF7BC47F),
     ),
-    _Feature(
+    const _Feature(
       icon: Icons.widgets_outlined,
       title: 'Home Screen Widget',
       description: 'See your next step without opening the app.\n\nOne tap to jump back in.',
@@ -46,7 +46,7 @@ class _FeaturesPreviewPageState extends State<FeaturesPreviewPage> {
   }
 
   Future<void> _checkPinSupport() async {
-    if (Platform.isAndroid) {
+    if ((!kIsWeb && defaultTargetPlatform == TargetPlatform.android)) {
       final supported = await WidgetService.isWidgetPinSupported();
       if (mounted) {
         setState(() => _canPinWidget = supported);

@@ -72,7 +72,7 @@ App Store requires screenshots for each device size you support.
 2. **Mini Tasks List** - Clean task list with checkmarks
 3. **Progress/Rewards** - Confetti celebration or achievement
 4. **Ambient Mode** - Focus timer with calming visuals
-5. **Calendar Integration** - Tasks synced to calendar
+5. **Routines** - A morning or evening routine with its streak
 
 ## App Preview Videos (Optional but Recommended)
 - **Duration:** 15-30 seconds
@@ -208,7 +208,7 @@ xcrun altool --upload-app -f "build/ios/ipa/adhd_decomposer.ipa" -u "your@email.
 ### App Functionality
 - [ ] All features work on iOS 14+
 - [ ] No crashes on any screen
-- [ ] Calendar integration works
+- [ ] Routines run and track streaks
 - [ ] Notifications work
 - [ ] In-app purchases work
 - [ ] Restore purchases works

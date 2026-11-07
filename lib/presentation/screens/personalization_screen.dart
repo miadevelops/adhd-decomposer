@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../data/models/player_profile.dart';
 import '../../data/services/sound_service.dart';
 import '../../data/services/xp_service.dart';
+import '../providers/task_provider.dart';
 import 'level_progression_screen.dart';
 
 class PersonalizationScreen extends StatelessWidget {
@@ -33,12 +34,13 @@ class PersonalizationScreen extends StatelessWidget {
           ),
           const SizedBox(height: 24),
           Text(
-            'App theme',
+            'Color scheme',
             style: Theme.of(context).textTheme.titleLarge,
           ),
           const SizedBox(height: 4),
           Text(
-            'Choose a palette you have unlocked by leveling up.',
+            'Choose an accent palette you have unlocked by leveling up. '
+            'Light and dark mode are set in Settings.',
             style: Theme.of(context).textTheme.bodyMedium,
           ),
           const SizedBox(height: 12),
@@ -78,8 +80,22 @@ class PersonalizationScreen extends StatelessWidget {
               isSelected: xpService.selectedSound == sound.id,
               onTap: isUnlocked
                   ? () {
-                      if (xpService.selectSound(sound.id)) {
+                      if (!xpService.selectSound(sound.id)) return;
+                      final tasks = context.read<TaskProvider>();
+                      if (tasks.soundEnabled &&
+                          tasks.celebrationSoundEnabled) {
                         SoundService().playTaskComplete(soundId: sound.id);
+                      } else {
+                        ScaffoldMessenger.of(context)
+                          ..hideCurrentSnackBar()
+                          ..showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                'Sound selected. Turn on sounds in Settings '
+                                'to hear it.',
+                              ),
+                            ),
+                          );
                       }
                     }
                   : null,
@@ -116,7 +132,9 @@ class _PersonalizationOption extends StatelessWidget {
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
       color: isSelected ? colorScheme.primary.withValues(alpha: 0.08) : null,
-      child: ListTile(
+      child: Semantics(
+        selected: isSelected,
+        child: ListTile(
         enabled: isUnlocked,
         onTap: onTap,
         leading: Container(
@@ -136,6 +154,7 @@ class _PersonalizationOption extends StatelessWidget {
         trailing: isSelected
             ? Icon(Icons.check_circle, color: colorScheme.primary)
             : null,
+        ),
       ),
     );
   }

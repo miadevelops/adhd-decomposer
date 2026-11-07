@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest.dart' as tz;
@@ -52,8 +53,17 @@ class NotificationService {
   
   /// Initialize the notification service
   Future<void> initialize() async {
-    // Initialize timezone
+    // Initialize timezone. tz.local defaults to UTC, which makes daily
+    // reminders fire at the wrong wall-clock time and drift across DST.
     tz.initializeTimeZones();
+    if (!kIsWeb) {
+      try {
+        final zone = await FlutterTimezone.getLocalTimezone();
+        tz.setLocalLocation(tz.getLocation(zone.identifier));
+      } catch (e) {
+        debugPrint('NotificationService: could not resolve local timezone: $e');
+      }
+    }
     
     // Open settings box
     _box = await Hive.openBox(_boxName);
@@ -195,8 +205,9 @@ class NotificationService {
     
     await _notifications.cancel(dailyReminderId);
     
-    final now = DateTime.now();
-    var scheduledDate = DateTime(
+    final now = tz.TZDateTime.now(tz.local);
+    var scheduledDate = tz.TZDateTime(
+      tz.local,
       now.year,
       now.month,
       now.day,
@@ -206,15 +217,16 @@ class NotificationService {
     
     // If time has passed today, schedule for tomorrow
     if (scheduledDate.isBefore(now)) {
-      scheduledDate = scheduledDate.add(const Duration(days: 1));
+      scheduledDate = tz.TZDateTime(tz.local, now.year, now.month,
+          now.day + 1, reminderHour, reminderMinute);
     }
     
     await _notifications.zonedSchedule(
       dailyReminderId,
       '🌟 Time to take tiny steps!',
       'What task can you break down today?',
-      tz.TZDateTime.from(scheduledDate, tz.local),
-      NotificationDetails(
+      scheduledDate,
+      const NotificationDetails(
         android: AndroidNotificationDetails(
           channelId,
           channelName,
@@ -222,7 +234,7 @@ class NotificationService {
           importance: Importance.defaultImportance,
           priority: Priority.defaultPriority,
         ),
-        iOS: const DarwinNotificationDetails(),
+        iOS: DarwinNotificationDetails(),
       ),
       androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
       uiLocalNotificationDateInterpretation:
@@ -252,7 +264,7 @@ class NotificationService {
       '💭 You have an unfinished task',
       'Ready to take the next tiny step?',
       tz.TZDateTime.from(reminderTime, tz.local),
-      NotificationDetails(
+      const NotificationDetails(
         android: AndroidNotificationDetails(
           channelId,
           channelName,
@@ -260,7 +272,7 @@ class NotificationService {
           importance: Importance.defaultImportance,
           priority: Priority.defaultPriority,
         ),
-        iOS: const DarwinNotificationDetails(),
+        iOS: DarwinNotificationDetails(),
       ),
       androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
       uiLocalNotificationDateInterpretation:
@@ -297,18 +309,17 @@ class NotificationService {
     
     await _notifications.cancel(streakReminderId);
     
-    final now = DateTime.now();
-    var scheduledDate = DateTime(now.year, now.month, now.day, 8, 30); // 8:30 AM
-    
-    // Schedule for tomorrow
-    scheduledDate = scheduledDate.add(const Duration(days: 1));
+    // 8:30 AM tomorrow, local wall-clock time
+    final now = tz.TZDateTime.now(tz.local);
+    final scheduledDate =
+        tz.TZDateTime(tz.local, now.year, now.month, now.day + 1, 8, 30);
     
     await _notifications.zonedSchedule(
       streakReminderId,
       '🔥 Great streak! Keep it going!',
       'You\'re on a $currentStreak day streak. Don\'t break the chain!',
-      tz.TZDateTime.from(scheduledDate, tz.local),
-      NotificationDetails(
+      scheduledDate,
+      const NotificationDetails(
         android: AndroidNotificationDetails(
           channelId,
           channelName,
@@ -316,7 +327,7 @@ class NotificationService {
           importance: Importance.defaultImportance,
           priority: Priority.defaultPriority,
         ),
-        iOS: const DarwinNotificationDetails(),
+        iOS: DarwinNotificationDetails(),
       ),
       androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
       uiLocalNotificationDateInterpretation:
@@ -340,7 +351,7 @@ class NotificationService {
       999,
       '✅ Notifications working!',
       'You\'ll receive gentle reminders to keep you on track.',
-      NotificationDetails(
+      const NotificationDetails(
         android: AndroidNotificationDetails(
           channelId,
           channelName,
@@ -348,7 +359,7 @@ class NotificationService {
           importance: Importance.high,
           priority: Priority.high,
         ),
-        iOS: const DarwinNotificationDetails(),
+        iOS: DarwinNotificationDetails(),
       ),
       payload: payloadHome,
     );
@@ -356,6 +367,6 @@ class NotificationService {
   
   /// Get pending notifications (for debugging)
   Future<List<PendingNotificationRequest>> getPendingNotifications() async {
-    return await _notifications.pendingNotificationRequests();
+    return _notifications.pendingNotificationRequests();
   }
 }

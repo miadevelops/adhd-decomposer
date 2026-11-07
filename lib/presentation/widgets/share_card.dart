@@ -16,6 +16,13 @@ class CompletionShareCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Rendered to a fixed-size image, so ignore the device text scale.
+    return MediaQuery.withNoTextScaling(
+      child: _build(context),
+    );
+  }
+
+  Widget _build(BuildContext context) {
     return Container(
       width: 360,
       height: 360,
@@ -42,7 +49,7 @@ class CompletionShareCard extends StatelessWidget {
               height: 120,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: Colors.white.withOpacity(0.1),
+                color: Colors.white.withValues(alpha: 0.1),
               ),
             ),
           ),
@@ -54,7 +61,7 @@ class CompletionShareCard extends StatelessWidget {
               height: 160,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: Colors.white.withOpacity(0.08),
+                color: Colors.white.withValues(alpha: 0.08),
               ),
             ),
           ),
@@ -69,7 +76,7 @@ class CompletionShareCard extends StatelessWidget {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.2),
+                    color: Colors.white.withValues(alpha: 0.2),
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Row(
@@ -99,7 +106,7 @@ class CompletionShareCard extends StatelessWidget {
                   style: GoogleFonts.nunito(
                     fontSize: 18,
                     fontWeight: FontWeight.w600,
-                    color: Colors.white.withOpacity(0.9),
+                    color: Colors.white.withValues(alpha: 0.9),
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -124,7 +131,7 @@ class CompletionShareCard extends StatelessWidget {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.15),
+                    color: Colors.white.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Row(
@@ -183,7 +190,7 @@ class CompletionShareCard extends StatelessWidget {
                             style: GoogleFonts.inter(
                               fontSize: 11,
                               fontWeight: FontWeight.w500,
-                              color: Colors.white.withOpacity(0.8),
+                              color: Colors.white.withValues(alpha: 0.8),
                             ),
                             overflow: TextOverflow.ellipsis,
                           ),
@@ -216,6 +223,13 @@ class StatsShareCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Rendered to a fixed-size image, so ignore the device text scale.
+    return MediaQuery.withNoTextScaling(
+      child: _build(context),
+    );
+  }
+
+  Widget _build(BuildContext context) {
     return Container(
       width: 360,
       height: 360,
@@ -241,7 +255,7 @@ class StatsShareCard extends StatelessWidget {
               height: 100,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: AppColors.primaryDark.withOpacity(0.2),
+                color: AppColors.primaryDark.withValues(alpha: 0.2),
               ),
             ),
           ),
@@ -253,7 +267,7 @@ class StatsShareCard extends StatelessWidget {
               height: 80,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: AppColors.secondaryDark.withOpacity(0.15),
+                color: AppColors.secondaryDark.withValues(alpha: 0.15),
               ),
             ),
           ),
@@ -324,7 +338,7 @@ class StatsShareCard extends StatelessWidget {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.08),
+                    color: Colors.white.withValues(alpha: 0.08),
                     borderRadius: BorderRadius.circular(16),
                   ),
                   child: Row(
@@ -354,7 +368,7 @@ class StatsShareCard extends StatelessWidget {
                           style: GoogleFonts.inter(
                             fontSize: 14,
                             fontWeight: FontWeight.w500,
-                            color: Colors.white.withOpacity(0.7),
+                            color: Colors.white.withValues(alpha: 0.7),
                           ),
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -369,7 +383,7 @@ class StatsShareCard extends StatelessWidget {
                   style: GoogleFonts.inter(
                     fontSize: 11,
                     fontWeight: FontWeight.w500,
-                    color: Colors.white.withOpacity(0.5),
+                    color: Colors.white.withValues(alpha: 0.5),
                   ),
                   textAlign: TextAlign.center,
                   overflow: TextOverflow.ellipsis,
@@ -401,10 +415,10 @@ class _StatBox extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.2),
+        color: color.withValues(alpha: 0.2),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: color.withOpacity(0.3),
+          color: color.withValues(alpha: 0.3),
           width: 2,
         ),
       ),
@@ -432,7 +446,7 @@ class _StatBox extends StatelessWidget {
               style: GoogleFonts.inter(
                 fontSize: 13,
                 fontWeight: FontWeight.w500,
-                color: Colors.white.withOpacity(0.7),
+                color: Colors.white.withValues(alpha: 0.7),
               ),
             ),
           ],

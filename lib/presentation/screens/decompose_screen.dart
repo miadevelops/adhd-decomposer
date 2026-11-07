@@ -7,12 +7,15 @@ import '../../core/constants/strings.dart';
 import '../../data/services/siri_service.dart';
 import 'task_summary_screen.dart';
 import 'paywall_screen.dart';
-
-/// Minimum touch target size for accessibility (48x48dp per WCAG guidelines)
-const double kMinTouchTarget = 48.0;
+import '../../core/theme/motion.dart';
+import '../widgets/scroll_fill.dart';
+import '../../core/theme/app_theme.dart';
 
 class DecomposeScreen extends StatefulWidget {
-  const DecomposeScreen({super.key});
+  /// Pre-fills the input, e.g. when starting a plan over.
+  final String? initialText;
+
+  const DecomposeScreen({super.key, this.initialText});
 
   @override
   State<DecomposeScreen> createState() => _DecomposeScreenState();
@@ -21,11 +24,25 @@ class DecomposeScreen extends StatefulWidget {
 class _DecomposeScreenState extends State<DecomposeScreen> {
   final _controller = TextEditingController();
   final _focusNode = FocusNode();
+  bool _hasText = false;
 
   @override
   void initState() {
     super.initState();
-    _controller.addListener(() => setState(() {}));
+    final initialText = widget.initialText;
+    if (initialText != null && initialText.isNotEmpty) {
+      _controller.value = TextEditingValue(
+        text: initialText,
+        selection: TextSelection.collapsed(offset: initialText.length),
+      );
+    }
+    // Only the button's enabled state depends on the text, so rebuild when
+    // the field flips between empty and non-empty rather than per keystroke.
+    _hasText = _controller.text.trim().isNotEmpty;
+    _controller.addListener(() {
+      final hasText = _controller.text.trim().isNotEmpty;
+      if (hasText != _hasText) setState(() => _hasText = hasText);
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkUsageLimit();
       // Auto-focus input field for accessibility
@@ -33,20 +50,13 @@ class _DecomposeScreenState extends State<DecomposeScreen> {
     });
   }
   
-  void _checkUsageLimit() {
-    final provider = context.read<TaskProvider>();
-    if (!provider.canDecompose) {
-      // Show paywall immediately if limit reached
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(
-          builder: (_) => PaywallScreen(
-            showSkip: false,
-            onPurchaseComplete: () {
-              Navigator.of(context).pop();
-            },
-          ),
-        ),
-      );
+  Future<void> _checkUsageLimit() async {
+    if (context.read<TaskProvider>().canDecompose) return;
+    // Show the paywall over this screen so a purchase lands the user back here.
+    await _showPaywall(context);
+    if (!mounted) return;
+    if (!context.read<TaskProvider>().canDecompose) {
+      Navigator.of(context).pop();
     }
   }
 
@@ -58,10 +68,8 @@ class _DecomposeScreenState extends State<DecomposeScreen> {
   }
   
   /// Check if animations should be reduced
-  bool _shouldReduceAnimations(BuildContext context) {
-    final provider = context.read<TaskProvider>();
-    return provider.reduceAnimations;
-  }
+  bool _shouldReduceAnimations(BuildContext context) =>
+      shouldReduceMotion(context);
 
   @override
   Widget build(BuildContext context) {
@@ -114,6 +122,20 @@ class _DecomposeScreenState extends State<DecomposeScreen> {
                 height: 1.5,
               ),
             ),
+            const SizedBox(height: 32),
+            TextButton(
+              onPressed: () {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text(
+                        "No problem - your plan will be on Home when it's ready."),
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+                Navigator.of(context).maybePop();
+              },
+              child: const Text("Don't wait - save it for later"),
+            ),
           ],
         ),
       ),
@@ -136,7 +158,8 @@ class _DecomposeScreenState extends State<DecomposeScreen> {
     
     return Padding(
       padding: const EdgeInsets.all(24),
-      child: Column(
+      child: ScrollFill(
+        child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           if (showRemainingBanner) ...[
@@ -165,9 +188,9 @@ class _DecomposeScreenState extends State<DecomposeScreen> {
             child: TextField(
               controller: _controller,
               focusNode: _focusNode,
-              decoration: InputDecoration(
+              decoration: const InputDecoration(
                 hintText: AppStrings.taskPlaceholder,
-                prefixIcon: const Icon(Icons.edit_outlined),
+                prefixIcon: Icon(Icons.edit_outlined),
               ),
               maxLines: 3,
               minLines: 1,
@@ -179,35 +202,25 @@ class _DecomposeScreenState extends State<DecomposeScreen> {
           const SizedBox(height: 16),
           _buildSuggestions(context),
           const Spacer(),
-          Semantics(
-            label: 'Break it down into steps',
-            button: true,
-            excludeSemantics: true,
-            enabled: _controller.text.trim().isNotEmpty,
-            hint: _controller.text.trim().isEmpty 
-                ? 'Enter a task first' 
-                : 'Double tap to break down your task',
-            child: SizedBox(
-              height: kMinTouchTarget,
-              child: ElevatedButton(
-                onPressed: _controller.text.trim().isEmpty 
-                  ? null 
-                  : () => _decompose(provider),
-                child: const Text(AppStrings.breakItDown),
-              ),
+          ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: kMinTouchTarget),
+            child: ElevatedButton(
+              onPressed: _controller.text.trim().isEmpty 
+                ? null 
+                : () => _decompose(provider),
+              child: const Text(AppStrings.breakItDown),
             ),
           ),
           const SizedBox(height: 16),
         ],
+        ),
       ),
     );
   }
   
   Widget _buildRemainingBanner(BuildContext context, int remaining, bool reduceAnimations) {
     final banner = Semantics(
-      label: remaining == 1
-          ? 'Warning: Last free breakdown. Upgrade for unlimited breakdowns.'
-          : '$remaining free breakdowns remaining.',
+      container: true,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         decoration: BoxDecoration(
@@ -231,6 +244,9 @@ class _DecomposeScreenState extends State<DecomposeScreen> {
                 remaining == 1
                     ? 'Last free breakdown! Upgrade for unlimited.'
                     : '$remaining free breakdowns left',
+                semanticsLabel: remaining == 1
+                    ? 'Last free breakdown. Upgrade for unlimited breakdowns.'
+                    : '$remaining free breakdowns remaining.',
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   fontWeight: FontWeight.w600,
                   color: remaining == 1
@@ -239,18 +255,14 @@ class _DecomposeScreenState extends State<DecomposeScreen> {
                 ),
               ),
             ),
-            Semantics(
-              label: 'Upgrade to premium',
-              button: true,
-              child: SizedBox(
-                height: kMinTouchTarget,
-                child: TextButton(
-                  onPressed: () => _showPaywall(context),
-                  style: TextButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                  ),
-                  child: const Text('Upgrade'),
+            SizedBox(
+              height: kMinTouchTarget,
+              child: TextButton(
+                onPressed: () => _showPaywall(context),
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
                 ),
+                child: const Text('Upgrade'),
               ),
             ),
           ],
@@ -278,34 +290,28 @@ class _DecomposeScreenState extends State<DecomposeScreen> {
       child: Wrap(
         spacing: 8,
         runSpacing: 8,
-        children: suggestions.map((s) => Semantics(
-          label: 'Use suggestion: $s',
-          button: true,
-          excludeSemantics: true,
-          child: SizedBox(
-            height: kMinTouchTarget,
-            child: ActionChip(
-              label: Text(s),
-              onPressed: () {
-                _controller.text = s;
-                // Announce selection for screen readers
-                SemanticsService.announce('Selected: $s', TextDirection.ltr);
-              },
-            ),
+        children: suggestions.map((s) => ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: kMinTouchTarget),
+          child: ActionChip(
+            label: Text(s),
+            onPressed: () {
+              _controller.value = TextEditingValue(
+                text: s,
+                selection: TextSelection.collapsed(offset: s.length),
+              );
+              // Announce selection for screen readers
+              SemanticsService.announce('Selected: $s', TextDirection.ltr);
+            },
           ),
         )).toList(),
       ),
     );
   }
   
-  void _showPaywall(BuildContext context) {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => PaywallScreen(
-          onSkip: () => Navigator.of(context).pop(),
-          onPurchaseComplete: () => Navigator.of(context).pop(),
-        ),
-      ),
+  /// Opens the paywall; it closes itself on skip or after a purchase.
+  Future<bool?> _showPaywall(BuildContext context) {
+    return Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (_) => const PaywallScreen()),
     );
   }
 
@@ -319,7 +325,7 @@ class _DecomposeScreenState extends State<DecomposeScreen> {
     }
     
     // Donate intent for Siri to learn this pattern
-    SiriService().donateDecomposeStarted('task');
+    SiriService().donateDecomposeStarted(_controller.text.trim());
     
     // Announce loading state for screen readers
     SemanticsService.announce('Breaking down your task. Please wait.', TextDirection.ltr);
@@ -331,14 +337,30 @@ class _DecomposeScreenState extends State<DecomposeScreen> {
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (_) => const TaskSummaryScreen()),
       );
-    } else if (provider.error != null && mounted) {
+    } else if (mounted) {
+      if (!provider.canDecompose) {
+        // Server reported the free allowance is used up
+        provider.clearError();
+        _showPaywall(context);
+        return;
+      }
+      final message = provider.error ??
+          "Couldn't break that down right now. Please try again.";
+      provider.clearError();
+      SemanticsService.announce(message, TextDirection.ltr);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(provider.error!),
+          content: Text(message),
           behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 8),
+          action: SnackBarAction(
+            label: 'Retry',
+            onPressed: () {
+              if (mounted) _decompose(provider);
+            },
+          ),
         ),
       );
-      provider.clearError();
     }
   }
 }

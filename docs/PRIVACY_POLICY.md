@@ -14,13 +14,19 @@ Tiny Steps ("we", "our", or "the app") is committed to protecting your privacy. 
 - **Tasks and steps** you create
 - **Settings and preferences** (theme, sounds, notification preferences)
 - **Usage statistics** (tasks completed, streaks, achievements)
-- **OpenAI API key** (if you choose to provide one)
 
-This data is stored locally on your device using encrypted storage and is **never uploaded to our servers**.
+This data is stored in the app's private storage on your device. It is not encrypted by the app, and it is not uploaded to our servers.
+
+### Data Sent to Our Servers
+
+- **AI breakdowns**: When you ask Tiny Steps to break down a task, or tap "I'm stuck" on a step, the task or step text (and the coaching style you picked) is sent to the Tiny Steps API, which forwards it to OpenAI to generate steps. To answer repeated identical requests quickly, the generated steps are cached on our servers, keyed by a one-way hash of the request, for up to 24 hours.
+- **Device identifier**: The app creates a random identifier on first launch. It is not linked to your name, email, or advertising ID. We use it to count your free breakdowns and to link a premium subscription to your device.
+- **Feedback**: If you send feedback, we store your message, the optional email address you enter, the app version, and your platform for up to 180 days.
 
 ### Data Sent to Third Parties
 
-- **OpenAI API**: When you use AI task decomposition, your task description is sent to OpenAI's API for processing. We do not store this data. See [OpenAI's Privacy Policy](https://openai.com/privacy).
+- **OpenAI**: Receives the task or step text described above in order to generate steps. See [OpenAI's Privacy Policy](https://openai.com/privacy).
+- **RevenueCat**: Processes in-app purchases and subscription status using an anonymous app user ID. See [RevenueCat's Privacy Policy](https://www.revenuecat.com/privacy).
 
 - **App Store/Play Store**: Standard analytics provided by Apple/Google about app usage, crashes, and installs.
 
@@ -40,7 +46,7 @@ This data is stored locally on your device using encrypted storage and is **neve
 
 ## Data Retention
 
-All user data is stored locally on your device. You can delete all data at any time through the app's Settings screen.
+Tasks, settings, and stats stay on your device until you delete them (Settings → Clear All Data) or uninstall the app. Cached AI responses expire after 24 hours, and feedback is deleted after 180 days. To ask us to delete server-side data tied to your device, contact us at the address below.
 
 ## Your Rights
 
@@ -63,4 +69,4 @@ Questions? Contact us at: support@tinysteps.app
 
 ---
 
-*This privacy policy is provided for transparency. Tiny Steps is designed with privacy-first principles: your data stays on your device.*
+*This privacy policy is provided for transparency. Tiny Steps is designed with privacy-first principles: your tasks and progress stay on your device, and only the text needed for an AI breakdown leaves it.*

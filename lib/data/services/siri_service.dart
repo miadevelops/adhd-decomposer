@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'package:flutter/foundation.dart';
 import '../models/routine.dart';
 
@@ -24,7 +23,7 @@ class SiriService {
     if (_initialized) return;
 
     // Siri Shortcuts only available on iOS
-    if (!Platform.isIOS) {
+    if (!(!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS)) {
       debugPrint('SiriService: Skipping - not iOS');
       _initialized = true;
       return;
@@ -42,7 +41,7 @@ class SiriService {
 
   /// Donate an activity for Siri suggestions (iOS only)
   Future<void> donateActivity(String type, {Map<String, dynamic>? metadata}) async {
-    if (!Platform.isIOS || !_initialized) return;
+    if (!(!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) || !_initialized) return;
     debugPrint('SiriService: Would donate activity: $type');
   }
 

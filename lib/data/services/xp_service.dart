@@ -43,7 +43,9 @@ class LevelUpEvent {
   });
 
   bool get hasUnlocks =>
-      unlockedThemes.isNotEmpty || unlockedSounds.isNotEmpty || newTitle != null;
+      unlockedThemes.isNotEmpty ||
+      unlockedSounds.isNotEmpty ||
+      newTitle != null;
 }
 
 /// Service for managing XP and leveling system
@@ -54,6 +56,8 @@ class XPService extends ChangeNotifier {
   static const String keyXPEarnedToday = 'xpEarnedToday';
   static const String keyXPEarnedThisWeek = 'xpEarnedThisWeek';
   static const String keyWeekStartDate = 'weekStartDate';
+  static const String keyXPTodayDate = 'xpTodayDate';
+  static const String keyLastStreakBonusDate = 'lastStreakBonusDate';
 
   // XP rewards
   static const int xpStepComplete = 10;
@@ -72,6 +76,7 @@ class XPService extends ChangeNotifier {
   int _xpEarnedToday = 0;
   int _xpEarnedThisWeek = 0;
   String? _weekStartDate;
+  String? _xpTodayDate;
 
   Future<void> initialize() async {
     _box = await Hive.openBox(_boxName);
@@ -90,12 +95,40 @@ class XPService extends ChangeNotifier {
     final stored = _safeBox.get(keyPlayerProfile);
     if (stored != null) {
       try {
-        _profile = PlayerProfile.fromJson(jsonDecode(stored) as Map<String, dynamic>);
+        _profile =
+            PlayerProfile.fromJson(jsonDecode(stored) as Map<String, dynamic>);
       } catch (e) {
         debugPrint('Error loading player profile: $e');
+        // Keep a copy so the next save doesn't destroy the player's progress
+        const backupKey = '${keyPlayerProfile}_corrupt';
+        if (_safeBox.get(backupKey) == null) _safeBox.put(backupKey, stored);
         _profile = PlayerProfile();
       }
     }
+    _grantMissingUnlocks();
+  }
+
+  /// Grants unlockables at or below the current level that the profile is
+  /// missing (e.g. items added in an app update after the user levelled past them).
+  void _grantMissingUnlocks() {
+    final themes = UnlockableTheme.all
+        .where((t) =>
+            t.requiredLevel <= _profile.level &&
+            !_profile.unlockedThemes.contains(t.id))
+        .map((t) => t.id)
+        .toList();
+    final sounds = UnlockableSound.all
+        .where((s) =>
+            s.requiredLevel <= _profile.level &&
+            !_profile.unlockedSounds.contains(s.id))
+        .map((s) => s.id)
+        .toList();
+    if (themes.isEmpty && sounds.isEmpty) return;
+    _profile = _profile.copyWith(
+      unlockedThemes: [..._profile.unlockedThemes, ...themes],
+      unlockedSounds: [..._profile.unlockedSounds, ...sounds],
+    );
+    _saveProfile();
   }
 
   void _saveProfile() {
@@ -107,16 +140,24 @@ class XPService extends ChangeNotifier {
     _xpEarnedToday = _safeBox.get(keyXPEarnedToday, defaultValue: 0);
     _xpEarnedThisWeek = _safeBox.get(keyXPEarnedThisWeek, defaultValue: 0);
     _weekStartDate = _safeBox.get(keyWeekStartDate);
+    // Older versions didn't store the day the counter belongs to; the last
+    // task completion date was the closest proxy.
+    _xpTodayDate = _safeBox.get(keyXPTodayDate) ?? _lastCompletionDate;
+    _rollPeriods();
+  }
 
-    // Reset daily tracking if it's a new day
-    final today = _dateToKey(DateTime.now());
-    if (_lastCompletionDate != today) {
+  /// Resets the daily/weekly counters when the day or week has changed.
+  void _rollPeriods() {
+    final now = DateTime.now();
+    final today = _dateToKey(now);
+    if (_xpTodayDate != today) {
       _xpEarnedToday = 0;
+      _xpTodayDate = today;
       _safeBox.put(keyXPEarnedToday, 0);
+      _safeBox.put(keyXPTodayDate, today);
     }
 
-    // Reset weekly tracking if it's a new week
-    final weekStart = _getWeekStart(DateTime.now());
+    final weekStart = _getWeekStart(now);
     if (_weekStartDate != weekStart) {
       _xpEarnedThisWeek = 0;
       _weekStartDate = weekStart;
@@ -141,10 +182,12 @@ class XPService extends ChangeNotifier {
   String get currentTitle => _profile.currentTitle;
 
   /// Get XP earned today
-  int get xpEarnedToday => _xpEarnedToday;
+  int get xpEarnedToday =>
+      _xpTodayDate == _dateToKey(DateTime.now()) ? _xpEarnedToday : 0;
 
   /// Get XP earned this week
-  int get xpEarnedThisWeek => _xpEarnedThisWeek;
+  int get xpEarnedThisWeek =>
+      _weekStartDate == _getWeekStart(DateTime.now()) ? _xpEarnedThisWeek : 0;
 
   /// Get XP required for next level
   int get xpForNextLevel => getXPForLevel(_profile.level + 1);
@@ -194,7 +237,8 @@ class XPService extends ChangeNotifier {
   }
 
   /// Award XP for completing a task
-  List<XPReward> awardTaskComplete({bool usedTimer = false, bool isFromTemplate = false}) {
+  List<XPReward> awardTaskComplete(
+      {bool usedTimer = false, bool isFromTemplate = false}) {
     final rewards = <XPReward>[];
     final today = _dateToKey(DateTime.now());
 
@@ -239,8 +283,12 @@ class XPService extends ChangeNotifier {
     return rewards;
   }
 
-  /// Award XP for maintaining a streak
-  XPReward awardStreakBonus(int streakDays) {
+  /// Award XP for maintaining a streak. Granted at most once per day so it
+  /// can't be farmed by completing many small tasks; returns null otherwise.
+  XPReward? awardStreakBonus(int streakDays) {
+    final today = _dateToKey(DateTime.now());
+    if (_safeBox.get(keyLastStreakBonusDate) == today) return null;
+    _safeBox.put(keyLastStreakBonusDate, today);
     final bonus = xpStreakBonus * streakDays.clamp(1, 7); // Cap at 7 days bonus
     return _awardXP(
       bonus,
@@ -251,7 +299,8 @@ class XPService extends ChangeNotifier {
 
   XPReward _awardXP(int amount, XPRewardType type, String description) {
     final previousLevel = _profile.level;
-    
+    _rollPeriods();
+
     _profile = _profile.copyWith(
       currentXP: _profile.currentXP + amount,
       totalXP: _profile.totalXP + amount,
@@ -265,7 +314,7 @@ class XPService extends ChangeNotifier {
 
     // Check for level up
     _checkLevelUp(previousLevel);
-    
+
     _saveProfile();
     notifyListeners();
 
@@ -277,8 +326,8 @@ class XPService extends ChangeNotifier {
   }
 
   void _checkLevelUp(int previousLevel) {
-    int newLevel = _calculateLevel(_profile.totalXP);
-    
+    final newLevel = _calculateLevel(_profile.totalXP);
+
     if (newLevel > previousLevel) {
       final unlockedThemes = <String>[];
       final unlockedSounds = <String>[];
@@ -288,14 +337,16 @@ class XPService extends ChangeNotifier {
       for (int lvl = previousLevel + 1; lvl <= newLevel; lvl++) {
         // Check themes
         for (final theme in UnlockableTheme.all) {
-          if (theme.requiredLevel == lvl && !_profile.unlockedThemes.contains(theme.id)) {
+          if (theme.requiredLevel == lvl &&
+              !_profile.unlockedThemes.contains(theme.id)) {
             unlockedThemes.add(theme.id);
           }
         }
 
         // Check sounds
         for (final sound in UnlockableSound.all) {
-          if (sound.requiredLevel == lvl && !_profile.unlockedSounds.contains(sound.id)) {
+          if (sound.requiredLevel == lvl &&
+              !_profile.unlockedSounds.contains(sound.id)) {
             unlockedSounds.add(sound.id);
           }
         }
@@ -379,7 +430,9 @@ class XPService extends ChangeNotifier {
 
   String _getWeekStart(DateTime date) {
     // Get Monday of current week
-    final monday = date.subtract(Duration(days: date.weekday - 1));
+    // Calendar arithmetic (not Duration) so DST changes can't shift the day.
+    final monday =
+        DateTime(date.year, date.month, date.day - (date.weekday - 1));
     return _dateToKey(monday);
   }
 }

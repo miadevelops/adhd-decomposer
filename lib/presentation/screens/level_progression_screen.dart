@@ -227,7 +227,9 @@ class _LevelMilestone extends StatelessWidget {
                     ),
                   )
                 : Icon(Icons.lock_outline,
-                    size: 20, color: colorScheme.onSurfaceVariant),
+                    size: 20,
+                    color: colorScheme.onSurfaceVariant,
+                    semanticLabel: 'Locked'),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -264,7 +266,9 @@ class _LevelMilestone extends StatelessWidget {
                           )
                         else if (isUnlocked)
                           Icon(Icons.check_circle,
-                              color: colorScheme.primary, size: 20),
+                              color: colorScheme.primary,
+                              size: 20,
+                              semanticLabel: 'Unlocked'),
                       ],
                     ),
                     const SizedBox(height: 8),

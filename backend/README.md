@@ -37,6 +37,13 @@ npx wrangler secret put OPENAI_API_KEY
 # JWT secret (generate a random 64-char string)
 npx wrangler secret put JWT_SECRET
 # (paste a random secret like: openssl rand -hex 32)
+
+# RevenueCat secret API key (Project settings > API keys > Secret key, starts with sk_)
+# Used to verify premium entitlements server-side. Without it, nobody is premium.
+npx wrangler secret put REVENUECAT_API_KEY
+
+# Shared secret for the RevenueCat webhook (see "RevenueCat Webhook" below)
+npx wrangler secret put REVENUECAT_WEBHOOK_SECRET
 ```
 
 ### 5. Update wrangler.toml
@@ -95,14 +102,55 @@ Break down a task into steps.
 ```json
 {
   "success": true,
-  "steps": [
-    "Grab a trash bag from under the sink",
-    "Walk around the room and pick up obvious trash",
-    "..."
-  ],
-  "estimatedMinutes": 25,
-  "encouragement": "You've got this! One step at a time.",
-  "cached": false
+  "task": {
+    "title": "Clean my room",
+    "steps": [
+      { "action": "Grab a trash bag from under the sink", "estimatedMinutes": 2 },
+      { "action": "Walk around the room and pick up obvious trash", "estimatedMinutes": 5 }
+    ],
+    "totalEstimatedMinutes": 7,
+    "encouragement": "You've got this! One step at a time."
+  },
+  "cached": false,
+  "usage": { "used": 1, "limit": 5, "remaining": 4 }
+}
+```
+
+`usage.limit` / `usage.remaining` are `-1` for premium users. If the AI call fails
+the response is `502` and the free breakdown is refunded.
+
+**Limit reached (`429`):**
+```json
+{
+  "success": false,
+  "error": "Free breakdowns used up",
+  "code": "FREE_LIMIT_REACHED",
+  "usage": { "used": 5, "limit": 5, "remaining": 0 }
+}
+```
+
+`code` is `RATE_LIMITED` (no `usage`) when the hourly abuse throttle trips.
+
+### `POST /v1/substeps`
+
+Break a step the user is stuck on into micro-steps. Counts toward the same free
+allowance as `/v1/decompose`.
+
+**Body:**
+```json
+{
+  "step": "Write the intro paragraph",
+  "taskContext": "Write blog post"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "substeps": ["Open the doc", "Type one sentence"],
+  "encouragement": "Tiny is fine.",
+  "usage": { "used": 2, "limit": 5, "remaining": 3 }
 }
 ```
 
@@ -117,8 +165,8 @@ Get current usage stats.
 ```json
 {
   "used": 2,
-  "limit": 3,
-  "resetsAt": "2024-01-02T00:00:00.000Z",
+  "limit": 5,
+  "remaining": 3,
   "isPremium": false
 }
 ```
@@ -137,12 +185,50 @@ Verify premium subscription status (for RevenueCat integration).
 }
 ```
 
-## Rate Limits
+Links this device to the RevenueCat app user id (the app sends `Purchases.appUserID`)
+and checks the entitlement with RevenueCat's REST API.
 
-- **Free users:** 3 decompositions per day
+**Response:**
+```json
+{ "success": true, "isPremium": true }
+```
+
+Premium status is never taken from the client or the JWT; it is always resolved
+server-side from RevenueCat and cached for up to an hour.
+
+### `POST /v1/feedback`
+
+Submit in-app feedback. Requires the JWT.
+
+**Body:**
+```json
+{
+  "message": "Love it, but ...",
+  "email": "optional@example.com",
+  "appVersion": "1.0.0",
+  "platform": "android"
+}
+```
+
+`message` is required (1-4000 characters after trimming). Limited to 5 submissions
+per device per day. Feedback is stored in the `USERS` KV namespace for 180 days:
+
+```bash
+wrangler kv key list --binding USERS --prefix feedback:
+wrangler kv key get --binding USERS "feedback:<timestamp>:<deviceId>"
+```
+
+**Response:**
+```json
+{ "success": true }
+```
+
+## Limits
+
+- **Free users:** 5 AI breakdowns total per device (lifetime). Task breakdowns and
+  "I'm stuck" breakdowns both count. Cached results still count.
 - **Premium users:** Unlimited
-
-Rate limits reset at midnight UTC.
+- **Everyone:** max 60 AI requests per device per hour, and max 10 registrations per IP per hour.
 
 ## Caching
 
@@ -151,7 +237,8 @@ Common task decompositions are cached for 24 hours to:
 - Improve response times
 - Provide consistent results
 
-Cache keys are normalized (lowercase, trimmed, punctuation removed) so slight variations still hit the cache.
+Cache keys are normalized (lowercase, trimmed, punctuation removed; Unicode-aware) and
+include the style and context, then hashed, so slight variations still hit the cache.
 
 ## Security
 
@@ -168,7 +255,13 @@ Set up a webhook in RevenueCat dashboard pointing to:
 POST https://your-worker.workers.dev/v1/webhook/revenuecat
 ```
 
-This will upgrade users to premium when they subscribe.
+In the webhook settings, set the **Authorization header value** to the same string you
+stored in `REVENUECAT_WEBHOOK_SECRET` (either the raw value or `Bearer <value>`).
+Requests without a matching header are rejected, and the endpoint returns `503` until
+the secret is configured.
+
+Each event clears the cached entitlement for the affected app user ids, so the next
+request re-checks RevenueCat (purchases, renewals, cancellations, expirations, transfers).
 
 ## Environment Variables
 
@@ -176,7 +269,10 @@ This will upgrade users to premium when they subscribe.
 |----------|-------------|
 | `OPENAI_API_KEY` | OpenAI API key (secret) |
 | `JWT_SECRET` | Secret for signing JWTs (secret) |
-| `FREE_DAILY_LIMIT` | Decompositions per day for free users |
+| `REVENUECAT_API_KEY` | RevenueCat secret API key for entitlement checks (secret) |
+| `REVENUECAT_WEBHOOK_SECRET` | Expected webhook Authorization header (secret) |
+| `FREE_LIFETIME_LIMIT` | Total free AI breakdowns per device |
+| `REVENUECAT_ENTITLEMENT_ID` | Entitlement that grants premium |
 | `CACHE_TTL_SECONDS` | How long to cache responses |
 
 ## Cost Estimation

@@ -1,8 +1,10 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../data/services/purchase_service.dart';
+import '../widgets/scroll_fill.dart';
 
 enum PricingOption { monthly, yearly, lifetime }
 
@@ -69,7 +71,8 @@ class _PaywallScreenState extends State<PaywallScreen> {
           body: SafeArea(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
-              child: Column(
+              child: ScrollFill(
+                child: Column(
                 children: [
                   // Skip button - compact
                   if (widget.showSkip)
@@ -79,8 +82,7 @@ class _PaywallScreenState extends State<PaywallScreen> {
                         onPressed: _isLoading ? null : (widget.onSkip ?? () => Navigator.of(context).pop()),
                         style: TextButton.styleFrom(
                           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                          minimumSize: Size.zero,
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          minimumSize: const Size(kMinInteractiveDimension, kMinInteractiveDimension),
                         ),
                         child: const Text('Maybe later'),
                       ),
@@ -117,6 +119,7 @@ class _PaywallScreenState extends State<PaywallScreen> {
                   // Footer row
                   _buildFooter(context, purchaseService),
                 ],
+                ),
               ),
             ),
           ),
@@ -160,7 +163,7 @@ class _PaywallScreenState extends State<PaywallScreen> {
         Text(
           'Unlimited breakdowns & focus tools',
           style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-            color: Theme.of(context).textTheme.bodySmall?.color?.withOpacity(0.7),
+            color: Theme.of(context).textTheme.bodySmall?.color?.withValues(alpha: 0.7),
           ),
           textAlign: TextAlign.center,
         ),
@@ -197,7 +200,9 @@ class _PaywallScreenState extends State<PaywallScreen> {
                 child: Icon(feature.icon, size: 20, color: Theme.of(context).colorScheme.onPrimaryContainer),
               ),
               const SizedBox(width: 12),
-              Text(feature.text, style: Theme.of(context).textTheme.bodyLarge),
+              Flexible(
+                child: Text(feature.text, style: Theme.of(context).textTheme.bodyLarge),
+              ),
             ],
           ),
         ).animate().fadeIn(delay: Duration(milliseconds: 100 + index * 50)).slideY(begin: 0.1, end: 0);
@@ -219,12 +224,15 @@ class _PaywallScreenState extends State<PaywallScreen> {
           Expanded(
             child: Text(
               _errorMessage!,
-              style: TextStyle(color: Theme.of(context).colorScheme.onErrorContainer, fontSize: 13),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.onErrorContainer,
+              ),
             ),
           ),
-          GestureDetector(
-            onTap: () => setState(() => _errorMessage = null),
-            child: const Icon(Icons.close, size: 16),
+          IconButton(
+            onPressed: () => setState(() => _errorMessage = null),
+            icon: const Icon(Icons.close, size: 18),
+            tooltip: 'Dismiss error',
           ),
         ],
       ),
@@ -244,7 +252,7 @@ class _PaywallScreenState extends State<PaywallScreen> {
         ? purchaseService.getFormattedPrice(purchaseService.lifetimePackage!)
         : '—';
     
-    final monthlyEquiv = purchaseService.getYearlyMonthlyEquivalent();
+    final monthlyEquiv = purchaseService.getYearlyMonthlyEquivalentFormatted();
     
     return Column(
       children: [
@@ -267,7 +275,7 @@ class _PaywallScreenState extends State<PaywallScreen> {
                 title: 'Yearly',
                 price: yearlyPrice,
                 period: '/yr',
-                subtitle: monthlyEquiv != null ? '\$${monthlyEquiv.toStringAsFixed(2)}/mo' : null,
+                subtitle: monthlyEquiv != null ? '$monthlyEquiv/mo' : null,
                 isSelected: _selectedOption == PricingOption.yearly,
                 onTap: () => setState(() => _selectedOption = PricingOption.yearly),
               ),
@@ -333,8 +341,8 @@ class _PaywallScreenState extends State<PaywallScreen> {
     
     // Billing info text
     final billingInfo = switch (_selectedOption) {
-      PricingOption.monthly => 'Billed monthly. Cancel anytime.',
-      PricingOption.yearly => 'Billed yearly. Cancel anytime.',
+      PricingOption.monthly => 'Billed monthly. Auto-renews until you cancel.',
+      PricingOption.yearly => 'Billed yearly. Auto-renews until you cancel.',
       PricingOption.lifetime => 'One-time purchase. Yours forever.',
     };
     
@@ -367,67 +375,71 @@ class _PaywallScreenState extends State<PaywallScreen> {
   }
   
   Widget _buildFooter(BuildContext context, PurchaseService purchaseService) {
-    return Column(
+    final linkStyle = TextButton.styleFrom(
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      minimumSize: const Size(kMinInteractiveDimension, kMinInteractiveDimension),
+    );
+    final termsUrl = defaultTargetPlatform == TargetPlatform.iOS ||
+            defaultTargetPlatform == TargetPlatform.macOS
+        ? 'https://www.apple.com/legal/internet-services/itunes/dev/stdeula/'
+        : 'https://play.google.com/about/play-terms/';
+
+    return Wrap(
+      alignment: WrapAlignment.center,
+      crossAxisAlignment: WrapCrossAlignment.center,
       children: [
-        // Restore + privacy + terms row
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            TextButton(
-              onPressed: _isLoading ? null : () => _restorePurchases(purchaseService),
-              style: TextButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                minimumSize: Size.zero,
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              ),
-              child: Text('Restore', style: Theme.of(context).textTheme.bodySmall),
-            ),
-            Text(' • ', style: Theme.of(context).textTheme.bodySmall),
-            TextButton(
-              onPressed: () => _openUrl('https://www.freeprivacypolicy.com/live/bece15e9-ea42-4925-a22b-9d0bae1bbfe3'),
-              style: TextButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                minimumSize: Size.zero,
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              ),
-              child: Text('Privacy', style: Theme.of(context).textTheme.bodySmall),
-            ),
-            Text(' • ', style: Theme.of(context).textTheme.bodySmall),
-            TextButton(
-              onPressed: () => _openUrl('https://www.apple.com/legal/internet-services/itunes/dev/stdeula/'),
-              style: TextButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                minimumSize: Size.zero,
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              ),
-              child: Text('Terms', style: Theme.of(context).textTheme.bodySmall),
-            ),
-          ],
+        TextButton(
+          onPressed: _isLoading ? null : () => _restorePurchases(purchaseService),
+          style: linkStyle,
+          child: Text('Restore', style: Theme.of(context).textTheme.bodySmall),
         ),
-        
-        const SizedBox(height: 4),
-        
-        Text(
-          _selectedOption == PricingOption.lifetime
-              ? 'One-time purchase. Yours forever.'
-              : 'Cancel anytime. Auto-renews.',
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-            color: Theme.of(context).textTheme.bodySmall?.color?.withOpacity(0.5),
-            fontSize: 11,
-          ),
-          textAlign: TextAlign.center,
+        ExcludeSemantics(
+          child: Text(' • ', style: Theme.of(context).textTheme.bodySmall),
+        ),
+        TextButton(
+          onPressed: () => _openUrl('https://www.freeprivacypolicy.com/live/bece15e9-ea42-4925-a22b-9d0bae1bbfe3'),
+          style: linkStyle,
+          child: Text('Privacy', style: Theme.of(context).textTheme.bodySmall),
+        ),
+        ExcludeSemantics(
+          child: Text(' • ', style: Theme.of(context).textTheme.bodySmall),
+        ),
+        TextButton(
+          onPressed: () => _openUrl(termsUrl),
+          style: linkStyle,
+          child: Text('Terms', style: Theme.of(context).textTheme.bodySmall),
         ),
       ],
     );
   }
   
   Future<void> _openUrl(String url) async {
-    final uri = Uri.parse(url);
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    final messenger = ScaffoldMessenger.of(context);
+    var opened = false;
+    try {
+      opened = await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+    } catch (_) {
+      opened = false;
+    }
+    if (!opened) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('Couldn\'t open the link. Visit $url')),
+      );
     }
   }
   
+  /// Hands control back after a successful purchase or restore. Callers that
+  /// don't supply [PaywallScreen.onPurchaseComplete] get the paywall closed
+  /// with a `true` result.
+  void _finishWithPurchase() {
+    final onComplete = widget.onPurchaseComplete;
+    if (onComplete != null) {
+      onComplete();
+    } else {
+      Navigator.of(context).maybePop(true);
+    }
+  }
+
   Future<void> _purchase(PurchaseService purchaseService) async {
     final package = switch (_selectedOption) {
       PricingOption.monthly => purchaseService.monthlyPackage,
@@ -454,10 +466,9 @@ class _PaywallScreenState extends State<PaywallScreen> {
                 ? 'Welcome to Pro — forever! 🎉'
                 : 'Welcome to Pro! 🎉'),
             behavior: SnackBarBehavior.floating,
-            backgroundColor: Colors.green,
           ),
         );
-        widget.onPurchaseComplete?.call();
+        _finishWithPurchase();
       }
     } on PurchaseException catch (e) {
       if (mounted) {
@@ -465,9 +476,9 @@ class _PaywallScreenState extends State<PaywallScreen> {
           // Ignore
         } else if (e.type == PurchaseErrorType.alreadyPurchased) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('You already have Pro! 🎉'), backgroundColor: Colors.green),
+            const SnackBar(content: Text('You already have Pro! 🎉')),
           );
-          widget.onPurchaseComplete?.call();
+          _finishWithPurchase();
         } else {
           setState(() => _errorMessage = e.userMessage);
         }
@@ -490,15 +501,17 @@ class _PaywallScreenState extends State<PaywallScreen> {
       if (mounted) {
         if (success) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Restored! 🎉'), backgroundColor: Colors.green),
+            const SnackBar(content: Text('Restored! 🎉')),
           );
-          widget.onPurchaseComplete?.call();
+          _finishWithPurchase();
         } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('No purchases found')),
-          );
+          setState(() => _errorMessage = defaultTargetPlatform == TargetPlatform.iOS
+              ? 'No previous purchase found for this Apple ID. Make sure you\'re signed in with the account you used to buy Pro.'
+              : 'No previous purchase found for this Google account. Make sure you\'re signed in to Play Store with the account you used to buy Pro.');
         }
       }
+    } on PurchaseException catch (e) {
+      if (mounted) setState(() => _errorMessage = e.userMessage);
     } catch (e) {
       if (mounted) setState(() => _errorMessage = 'Restore failed.');
     } finally {
@@ -530,7 +543,10 @@ class _CompactPricingCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
+    return Semantics(
+      selected: isSelected,
+      inMutuallyExclusiveGroup: true,
+      child: Material(
       color: Colors.transparent,
       borderRadius: BorderRadius.circular(12),
       child: InkWell(
@@ -544,7 +560,7 @@ class _CompactPricingCard extends StatelessWidget {
             border: Border.all(
               color: isSelected
                   ? Theme.of(context).colorScheme.primary
-                  : Theme.of(context).colorScheme.outline.withOpacity(0.3),
+                  : Theme.of(context).colorScheme.outline.withValues(alpha: 0.3),
               width: isSelected ? 2.5 : 1.5,
             ),
           ),
@@ -568,7 +584,27 @@ class _CompactPricingCard extends StatelessWidget {
                   ),
                 ),
               
-              Text(title, style: Theme.of(context).textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w500)),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (isSelected) ...[
+                    Icon(
+                      Icons.check_circle,
+                      size: 16,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                    const SizedBox(width: 4),
+                  ],
+                  Flexible(
+                    child: Text(
+                      title,
+                      style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                            fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                          ),
+                    ),
+                  ),
+                ],
+              ),
               
               const SizedBox(height: 2),
               
@@ -591,13 +627,14 @@ class _CompactPricingCard extends StatelessWidget {
                 Text(
                   subtitle!,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).textTheme.bodySmall?.color?.withOpacity(0.7),
+                    color: Theme.of(context).textTheme.bodySmall?.color?.withValues(alpha: 0.7),
                     fontSize: 11,
                   ),
                 ),
             ],
           ),
         ),
+      ),
       ),
     );
   }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import '../../widgets/scroll_fill.dart';
 
 class WelcomePage extends StatelessWidget {
   final VoidCallback onNext;
@@ -10,7 +11,7 @@ class WelcomePage extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.all(32),
-      child: Column(
+      child: ScrollFill(child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
@@ -107,7 +108,7 @@ class WelcomePage extends StatelessWidget {
           
           const SizedBox(height: 32),
         ],
-      ),
+      )),
     );
   }
 }

@@ -1,12 +1,27 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:adhd_decomposer/data/services/ai_service.dart';
+import 'package:adhd_decomposer/data/services/backend_service.dart';
+
+/// Backend that is always unreachable, so AIService uses offline templates.
+class _OfflineBackend extends BackendService {
+  @override
+  Future<Map<String, dynamic>?> decomposeTask(
+    String taskDescription, {
+    DecompositionStyle style = DecompositionStyle.standard,
+  }) async =>
+      null;
+
+  @override
+  Future<SubStepsResult?> getSubSteps(String step, {String? taskContext}) async =>
+      null;
+}
 
 void main() {
   group('AIService', () {
     late AIService service;
 
     setUp(() {
-      service = AIService();
+      service = AIService(backend: _OfflineBackend());
     });
 
     group('DecompositionStyle', () {
@@ -74,18 +89,12 @@ void main() {
     });
 
     group('getSubSteps', () {
-      test('returns grounding steps when stuck', () async {
+      test('returns tiny starter steps when stuck (offline)', () async {
         final steps = await service.getSubSteps('Clean the counter', null);
-        
+
         expect(steps.isNotEmpty, true);
-        // Should start with grounding/easy steps
-        final firstStep = steps.first.action.toLowerCase();
-        expect(
-          firstStep.contains('breath') || 
-          firstStep.contains('look') ||
-          firstStep.contains('stand'),
-          true,
-        );
+        expect(steps.first.estimatedMinutes, lessThanOrEqualTo(2));
+        expect(service.lastSource, AIResultSource.offline);
       });
     });
 

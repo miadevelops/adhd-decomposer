@@ -53,7 +53,7 @@ class CalendarService {
   /// Returns true if permission was granted
   Future<bool> requestCalendarPermission() async {
     try {
-      var permissionsGranted = await _plugin.hasPermissions();
+      final permissionsGranted = await _plugin.hasPermissions();
       if (permissionsGranted.isSuccess && permissionsGranted.data == true) {
         return true;
       }

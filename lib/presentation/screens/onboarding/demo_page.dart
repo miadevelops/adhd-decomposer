@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import '../../../core/theme/motion.dart';
 
 class DemoPage extends StatefulWidget {
   final VoidCallback onNext;
@@ -12,7 +13,6 @@ class DemoPage extends StatefulWidget {
 }
 
 class _DemoPageState extends State<DemoPage> {
-  bool _showInput = true;
   bool _isDecomposing = false;
   bool _showSteps = false;
   int _visibleSteps = 0;
@@ -36,11 +36,9 @@ class _DemoPageState extends State<DemoPage> {
     super.dispose();
   }
   
-  void _startDemo() async {
-    setState(() {
-      _showInput = false;
-      _isDecomposing = true;
-    });
+  Future<void> _startDemo() async {
+    if (_isDecomposing || _showSteps) return;
+    setState(() => _isDecomposing = true);
     
     // Simulate AI thinking
     await Future.delayed(const Duration(milliseconds: 1500));
@@ -75,7 +73,7 @@ class _DemoPageState extends State<DemoPage> {
     });
   }
   
-  void _completeStep(int index) async {
+  Future<void> _completeStep(int index) async {
     if (index != _completedSteps) return;
     
     _autoCompleteTimer?.cancel();
@@ -127,10 +125,10 @@ class _DemoPageState extends State<DemoPage> {
               width: double.infinity,
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.5),
+                color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
                 borderRadius: BorderRadius.circular(20),
                 border: Border.all(
-                  color: Theme.of(context).colorScheme.outline.withOpacity(0.2),
+                  color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.2),
                 ),
               ),
               child: _showCelebration
@@ -145,7 +143,7 @@ class _DemoPageState extends State<DemoPage> {
           
           const SizedBox(height: 16),
           
-          // Continue button (shown after celebration)
+          // Continue after the celebration; until then the demo is skippable.
           if (_showCelebration)
             SizedBox(
               width: double.infinity,
@@ -158,8 +156,19 @@ class _DemoPageState extends State<DemoPage> {
               ),
             ).animate().fadeIn().slideY(begin: 0.5, end: 0)
           else
-            // Placeholder to maintain layout
-            const SizedBox(height: 48),
+            SizedBox(
+              width: double.infinity,
+              child: TextButton(
+                onPressed: () {
+                  _autoCompleteTimer?.cancel();
+                  widget.onNext();
+                },
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+                child: const Text('Skip demo'),
+              ),
+            ),
         ],
       ),
     );
@@ -176,7 +185,7 @@ class _DemoPageState extends State<DemoPage> {
             color: Theme.of(context).colorScheme.surface,
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
-              color: Theme.of(context).colorScheme.outline.withOpacity(0.3),
+              color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.3),
             ),
           ),
           child: Row(
@@ -218,7 +227,7 @@ class _DemoPageState extends State<DemoPage> {
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: List.generate(3, (index) {
-            return Container(
+            final dot = Container(
               width: 12,
               height: 12,
               margin: const EdgeInsets.symmetric(horizontal: 4),
@@ -226,7 +235,9 @@ class _DemoPageState extends State<DemoPage> {
                 color: Theme.of(context).colorScheme.primary,
                 shape: BoxShape.circle,
               ),
-            )
+            );
+            if (shouldReduceMotion(context)) return dot;
+            return dot
                 .animate(onPlay: (c) => c.repeat())
                 .fadeIn(delay: Duration(milliseconds: index * 200))
                 .then()
@@ -289,10 +300,10 @@ class _DemoPageState extends State<DemoPage> {
                 padding: const EdgeInsets.only(bottom: 6),
                 child: Material(
                   color: isCompleted
-                      ? Theme.of(context).colorScheme.primaryContainer.withOpacity(0.5)
+                      ? Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.5)
                       : isCurrent
                           ? Theme.of(context).colorScheme.surface
-                          : Theme.of(context).colorScheme.surface.withOpacity(0.5),
+                          : Theme.of(context).colorScheme.surface.withValues(alpha: 0.5),
                   borderRadius: BorderRadius.circular(10),
                   child: InkWell(
                     onTap: isCurrent ? () => _completeStep(index) : null,
@@ -340,7 +351,7 @@ class _DemoPageState extends State<DemoPage> {
                               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                                 decoration: isCompleted ? TextDecoration.lineThrough : null,
                                 color: isCompleted
-                                    ? Theme.of(context).textTheme.bodySmall?.color?.withOpacity(0.6)
+                                    ? Theme.of(context).textTheme.bodySmall?.color?.withValues(alpha: 0.6)
                                     : null,
                               ),
                             ),
@@ -348,24 +359,13 @@ class _DemoPageState extends State<DemoPage> {
                           
                           // Tap hint for current
                           if (isCurrent)
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: Text(
-                                'Tap!',
-                                style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                                  color: Theme.of(context).colorScheme.primary,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 10,
-                                ),
-                              ),
-                            ).animate(onPlay: (c) => c.repeat(reverse: true))
-                                .fadeIn()
-                                .then(delay: 800.ms)
-                                .fadeOut(duration: 400.ms),
+                            shouldReduceMotion(context)
+                                ? _buildTapHint(context)
+                                : _buildTapHint(context)
+                                    .animate(onPlay: (c) => c.repeat(reverse: true))
+                                    .fadeIn()
+                                    .then(delay: 800.ms)
+                                    .fadeOut(duration: 400.ms),
                         ],
                       ),
                     ),
@@ -379,6 +379,23 @@ class _DemoPageState extends State<DemoPage> {
     );
   }
   
+  Widget _buildTapHint(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        'Tap!',
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+          color: Theme.of(context).colorScheme.primary,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+    );
+  }
+
   Widget _buildCelebration(BuildContext context) {
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
@@ -388,7 +405,11 @@ class _DemoPageState extends State<DemoPage> {
           '🎉',
           style: TextStyle(fontSize: 56),
         )
-            .animate(onPlay: (c) => c.repeat(reverse: true))
+            .animate(
+              onPlay: (c) => shouldReduceMotion(context)
+                  ? c.stop()
+                  : c.repeat(reverse: true),
+            )
             .scale(begin: const Offset(1, 1), end: const Offset(1.15, 1.15))
             .then()
             .shake(),

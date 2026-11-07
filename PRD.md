@@ -212,7 +212,7 @@ lib/
 ## Monetization (Post-MVP)
 
 **Freemium Model:**
-- Free: 3 decompositions/day, basic celebrations
+- Free: 5 AI breakdowns total (including "I'm stuck" breakdowns), basic celebrations
 - Premium ($4.99/mo): Unlimited, all sounds/themes, no ads, stats
 
 **Alternative:** One-time purchase $9.99 (ADHD users prefer no subscriptions)

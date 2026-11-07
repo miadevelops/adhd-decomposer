@@ -96,6 +96,20 @@ class SettingsService {
   void incrementDecompositionCount() {
     decompositionCount = decompositionCount + 1;
   }
+
+  /// Adopt the server's lifetime usage count (the backend is authoritative).
+  void syncDecompositionCount(int serverUsed) {
+    if (serverUsed >= 0 && serverUsed != decompositionCount) {
+      decompositionCount = serverUsed;
+    }
+  }
+
+  /// Called when the server reports the free allowance is used up.
+  void markFreeLimitReached() {
+    if (decompositionCount < freeDecompositionLimit) {
+      decompositionCount = freeDecompositionLimit;
+    }
+  }
   
   bool get hasReachedFreeLimit => !isPremium && decompositionCount >= freeDecompositionLimit;
   

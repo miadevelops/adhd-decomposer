@@ -19,7 +19,7 @@ class Routine {
   List<int> daysOfWeek; // 1-7 (Monday-Sunday) for weekly recurrence
   int? dayOfMonth; // 1-31 for monthly recurrence
   DateTime? lastCompleted;
-  int completionStreak;
+  int _completionStreak;
   DateTime createdAt;
   int totalEstimatedMinutes;
 
@@ -32,50 +32,69 @@ class Routine {
     this.daysOfWeek = const [],
     this.dayOfMonth,
     this.lastCompleted,
-    this.completionStreak = 0,
+    int completionStreak = 0,
     DateTime? createdAt,
     int? totalEstimatedMinutes,
-  }) : createdAt = createdAt ?? DateTime.now(),
+  }) : _completionStreak = completionStreak,
+       createdAt = createdAt ?? DateTime.now(),
        totalEstimatedMinutes = totalEstimatedMinutes ?? 
            steps.fold(0, (sum, step) => sum + step.estimatedMinutes);
 
+  /// Current streak. Reads as 0 once a scheduled occurrence has been missed,
+  /// even before the next completion resets the stored value.
+  int get completionStreak =>
+      _streakIntact(_dateOnly(DateTime.now())) ? _completionStreak : 0;
+
   /// Check if this routine is due today
   bool isDueToday() {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    
-    // If already completed today, not due
-    if (lastCompleted != null) {
-      final lastCompletedDate = DateTime(
-        lastCompleted!.year,
-        lastCompleted!.month,
-        lastCompleted!.day,
-      );
-      if (lastCompletedDate == today) {
-        return false;
-      }
-    }
-    
+    if (isCompletedToday()) return false;
+    return isScheduledOn(DateTime.now());
+  }
+
+  /// Whether the recurrence rule includes the given calendar day.
+  bool isScheduledOn(DateTime day) {
     switch (recurrence) {
       case RecurrenceType.daily:
         return true;
         
       case RecurrenceType.weekdays:
         // Monday = 1, Sunday = 7
-        return now.weekday >= 1 && now.weekday <= 5;
+        return day.weekday >= 1 && day.weekday <= 5;
         
       case RecurrenceType.weekly:
-        return daysOfWeek.contains(now.weekday);
+        return daysOfWeek.contains(day.weekday);
         
       case RecurrenceType.monthly:
         if (dayOfMonth == null) return false;
         // Handle months with fewer days
-        final lastDayOfMonth = DateTime(now.year, now.month + 1, 0).day;
+        final lastDayOfMonth = DateTime(day.year, day.month + 1, 0).day;
         final effectiveDay = dayOfMonth! > lastDayOfMonth 
             ? lastDayOfMonth 
             : dayOfMonth!;
-        return now.day == effectiveDay;
+        return day.day == effectiveDay;
     }
+  }
+
+  static DateTime _dateOnly(DateTime d) => DateTime(d.year, d.month, d.day);
+
+  /// Most recent scheduled day strictly before [today], or null if none in
+  /// the last ~2 months (e.g. a weekly routine with no days selected).
+  DateTime? _previousScheduledDay(DateTime today) {
+    for (var i = 1; i <= 62; i++) {
+      final day = DateTime(today.year, today.month, today.day - i);
+      if (isScheduledOn(day)) return day;
+    }
+    return null;
+  }
+
+  /// The streak survives as long as no scheduled day between the last
+  /// completion and today was missed. Today itself is still open.
+  bool _streakIntact(DateTime today) {
+    if (lastCompleted == null) return false;
+    final lastDate = _dateOnly(lastCompleted!);
+    if (!lastDate.isBefore(today)) return true;
+    final previous = _previousScheduledDay(today);
+    return previous == null || !lastDate.isBefore(previous);
   }
 
   /// Check if this routine is completed today
@@ -87,56 +106,14 @@ class Routine {
            lastCompleted!.day == now.day;
   }
 
-  /// Mark routine as complete and update streak
-  void markComplete() {
+  /// Mark routine as complete and update streak. Returns false (and changes
+  /// nothing) if it was already completed today.
+  bool markComplete() {
+    if (isCompletedToday()) return false;
     final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    
-    if (lastCompleted != null) {
-      final lastDate = DateTime(
-        lastCompleted!.year,
-        lastCompleted!.month,
-        lastCompleted!.day,
-      );
-      
-      // Check if this continues the streak (completed yesterday or today)
-      final yesterday = today.subtract(const Duration(days: 1));
-      if (lastDate == yesterday || _wasScheduledYesterday(lastDate, today)) {
-        completionStreak++;
-      } else if (lastDate != today) {
-        // Streak broken - reset to 1
-        completionStreak = 1;
-      }
-    } else {
-      // First completion
-      completionStreak = 1;
-    }
-    
+    _completionStreak = _streakIntact(_dateOnly(now)) ? _completionStreak + 1 : 1;
     lastCompleted = now;
-  }
-
-  /// Check if this routine was scheduled for the previous day
-  bool _wasScheduledYesterday(DateTime lastDate, DateTime today) {
-    final yesterday = today.subtract(const Duration(days: 1));
-    
-    switch (recurrence) {
-      case RecurrenceType.daily:
-        return lastDate == yesterday;
-        
-      case RecurrenceType.weekdays:
-        // If yesterday was a weekday and we completed it
-        return yesterday.weekday >= 1 && 
-               yesterday.weekday <= 5 && 
-               lastDate == yesterday;
-        
-      case RecurrenceType.weekly:
-        return daysOfWeek.contains(yesterday.weekday) && 
-               lastDate == yesterday;
-        
-      case RecurrenceType.monthly:
-        // Monthly streaks just check consecutive months
-        return true;
-    }
+    return true;
   }
 
   /// Get human-readable recurrence description

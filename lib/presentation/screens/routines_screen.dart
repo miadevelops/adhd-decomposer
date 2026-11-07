@@ -6,9 +6,28 @@ import '../../data/services/routine_service.dart';
 import '../../data/services/siri_service.dart';
 import '../providers/task_provider.dart';
 import 'execute_screen.dart';
+import '../../core/theme/app_theme.dart';
 
-/// Minimum touch target size for accessibility
-const double kMinTouchTarget = 48.0;
+/// Starts (or resumes today's run of) [routine] and opens it. Shared by
+/// Home, the Routines list and Siri so they behave the same.
+void startRoutineFlow(BuildContext context, Routine routine) {
+  final taskProvider = context.read<TaskProvider>();
+  final routineService = context.read<RoutineService>();
+  final navigator = Navigator.of(context);
+
+  taskProvider.startRoutine(routine);
+
+  // Donate intent for Siri to suggest this routine next time
+  SiriService().donateRoutineUsed(routine);
+
+  navigator.push(
+    MaterialPageRoute(
+      builder: (_) => ExecuteScreen(
+        onTaskComplete: () => routineService.markRoutineComplete(routine.id),
+      ),
+    ),
+  );
+}
 
 class RoutinesScreen extends StatefulWidget {
   const RoutinesScreen({super.key});
@@ -27,15 +46,10 @@ class _RoutinesScreenState extends State<RoutinesScreen> {
           child: const Text('Routines'),
         ),
         actions: [
-          Semantics(
-            label: 'Create new routine',
-            button: true,
-            excludeSemantics: true,
-            child: IconButton(
-              icon: const Icon(Icons.add),
-              tooltip: 'New Routine',
-              onPressed: () => _createNewRoutine(context),
-            ),
+          IconButton(
+            icon: const Icon(Icons.add),
+            tooltip: 'New Routine',
+            onPressed: () => _createNewRoutine(context),
           ),
         ],
       ),
@@ -58,7 +72,7 @@ class _RoutinesScreenState extends State<RoutinesScreen> {
               
               // Due today section
               if (dueToday.isNotEmpty) ...[
-                _buildSectionHeader(context, 'Due Today', Icons.today, Colors.orange),
+                _buildSectionHeader(context, 'Due Today', Icons.today, StatusColors.of(context).warning),
                 const SizedBox(height: 8),
                 ...dueToday.map((r) => _RoutineCard(
                   routine: r,
@@ -112,15 +126,10 @@ class _RoutinesScreenState extends State<RoutinesScreen> {
           );
         },
       ),
-      floatingActionButton: Semantics(
-        label: 'Create new routine',
-        button: true,
-        excludeSemantics: true,
-        child: FloatingActionButton.extended(
-          onPressed: () => _createNewRoutine(context),
-          icon: const Icon(Icons.add),
-          label: const Text('New Routine'),
-        ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => _createNewRoutine(context),
+        icon: const Icon(Icons.add),
+        label: const Text('New Routine'),
       ),
     );
   }
@@ -135,7 +144,7 @@ class _RoutinesScreenState extends State<RoutinesScreen> {
             Icon(
               Icons.repeat_rounded,
               size: 80,
-              color: Theme.of(context).colorScheme.primary.withOpacity(0.5),
+              color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.5),
             ),
             const SizedBox(height: 24),
             Text(
@@ -241,8 +250,8 @@ class _RoutinesScreenState extends State<RoutinesScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Delete Routine'),
-        content: Text('Are you sure you want to delete "${routine.name}"? '
-            'Your streak of ${routine.completionStreak} days will be lost.'),
+        content: Text('Are you sure you want to delete "${routine.name}"?'
+            '${routine.completionStreak > 0 ? ' Your ${routine.completionStreak}-day streak will be lost.' : ''}'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
@@ -261,25 +270,8 @@ class _RoutinesScreenState extends State<RoutinesScreen> {
     );
   }
   
-  void _startRoutine(BuildContext context, Routine routine) {
-    final task = routine.toTask();
-    context.read<TaskProvider>().addTask(task);
-    context.read<TaskProvider>().setActiveTask(task);
-    
-    // Donate intent for Siri to suggest this routine next time
-    SiriService().donateRoutineUsed(routine);
-    
-    // Navigate to execute screen with callback to mark routine complete
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => ExecuteScreen(
-          onTaskComplete: () {
-            context.read<RoutineService>().markRoutineComplete(routine.id);
-          },
-        ),
-      ),
-    );
-  }
+  void _startRoutine(BuildContext context, Routine routine) =>
+      startRoutineFlow(context, routine);
 }
 
 class _RoutineCard extends StatelessWidget {
@@ -309,12 +301,13 @@ class _RoutineCard extends StatelessWidget {
           'Double tap to start.';
     
     return Semantics(
+      container: true,
       label: semanticLabel,
       button: onTap != null,
       child: Card(
         margin: const EdgeInsets.only(bottom: 12),
         color: isCompleted 
-            ? Theme.of(context).colorScheme.primaryContainer.withOpacity(0.5)
+            ? Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.5)
             : null,
         child: InkWell(
           onTap: onTap,
@@ -339,7 +332,7 @@ class _RoutineCard extends StatelessWidget {
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
-                          color: Colors.orange.withOpacity(0.2),
+                          color: StatusColors.of(context).warning.withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Row(
@@ -351,7 +344,7 @@ class _RoutineCard extends StatelessWidget {
                               '${routine.completionStreak}',
                               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                                 fontWeight: FontWeight.bold,
-                                color: Colors.orange,
+                                color: StatusColors.of(context).warning,
                               ),
                             ),
                           ],
@@ -361,7 +354,7 @@ class _RoutineCard extends StatelessWidget {
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
-                          color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
+                          color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Text(
@@ -379,6 +372,34 @@ class _RoutineCard extends StatelessWidget {
                           color: Theme.of(context).colorScheme.primary,
                         ),
                       ),
+                    PopupMenuButton<String>(
+                      tooltip: 'Options for ${routine.name}',
+                      onSelected: (value) {
+                        if (value == 'edit') onEdit();
+                        if (value == 'delete') onDelete();
+                      },
+                      itemBuilder: (_) => [
+                        const PopupMenuItem(
+                          value: 'edit',
+                          child: ListTile(
+                            leading: Icon(Icons.edit),
+                            title: Text('Edit'),
+                            contentPadding: EdgeInsets.zero,
+                          ),
+                        ),
+                        PopupMenuItem(
+                          value: 'delete',
+                          child: ListTile(
+                            leading: Icon(Icons.delete,
+                                color: Theme.of(context).colorScheme.error),
+                            title: Text('Delete',
+                                style: TextStyle(
+                                    color: Theme.of(context).colorScheme.error)),
+                            contentPadding: EdgeInsets.zero,
+                          ),
+                        ),
+                      ],
+                    ),
                   ],
                 ),
                 const SizedBox(height: 8),
@@ -496,8 +517,47 @@ class _CreateRoutineScreenState extends State<CreateRoutineScreen> {
   int _dayOfMonth = 1;
   List<TaskStep> _steps = [];
   
+  late String _initialSignature;
+
   bool get _isEditing => widget.routineToEdit != null;
-  
+
+  String get _signature => [
+        _nameController.text.trim(),
+        _recurrence.name,
+        '${_preferredTime.hour}:${_preferredTime.minute}',
+        _selectedDays.join(','),
+        _dayOfMonth,
+        _steps.map((s) => '${s.action}|${s.estimatedMinutes}').join(';'),
+      ].join('#');
+
+  bool get _hasUnsavedChanges => _signature != _initialSignature;
+
+  Future<void> _confirmDiscard() async {
+    final navigator = Navigator.of(context);
+    if (!_hasUnsavedChanges) {
+      navigator.pop();
+      return;
+    }
+    final discard = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Discard changes?'),
+        content: const Text('Your changes to this routine haven\'t been saved.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Keep editing'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Discard'),
+          ),
+        ],
+      ),
+    );
+    if (discard == true && mounted) navigator.pop();
+  }
+
   @override
   void initState() {
     super.initState();
@@ -524,6 +584,7 @@ class _CreateRoutineScreenState extends State<CreateRoutineScreen> {
         )).toList(),
       )).toList();
     }
+    _initialSignature = _signature;
   }
   
   @override
@@ -534,7 +595,12 @@ class _CreateRoutineScreenState extends State<CreateRoutineScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _confirmDiscard();
+      },
+      child: Scaffold(
       appBar: AppBar(
         title: Text(_isEditing ? 'Edit Routine' : 'Create Routine'),
       ),
@@ -552,7 +618,7 @@ class _CreateRoutineScreenState extends State<CreateRoutineScreen> {
                 prefixIcon: Icon(Icons.edit),
               ),
               validator: (value) {
-                if (value == null || value.isEmpty) {
+                if (value == null || value.trim().isEmpty) {
                   return 'Please enter a name';
                 }
                 return null;
@@ -646,7 +712,7 @@ class _CreateRoutineScreenState extends State<CreateRoutineScreen> {
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
                 side: BorderSide(
-                  color: Theme.of(context).colorScheme.outline.withOpacity(0.3),
+                  color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.3),
                 ),
               ),
               onTap: _selectTime,
@@ -679,7 +745,7 @@ class _CreateRoutineScreenState extends State<CreateRoutineScreen> {
                       Icon(
                         Icons.format_list_numbered,
                         size: 48,
-                        color: Theme.of(context).colorScheme.primary.withOpacity(0.5),
+                        color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.5),
                       ),
                       const SizedBox(height: 16),
                       Text(
@@ -698,6 +764,7 @@ class _CreateRoutineScreenState extends State<CreateRoutineScreen> {
             else
               ReorderableListView.builder(
                 shrinkWrap: true,
+                buildDefaultDragHandles: false,
                 physics: const NeverScrollableScrollPhysics(),
                 itemCount: _steps.length,
                 onReorder: (oldIndex, newIndex) {
@@ -728,6 +795,7 @@ class _CreateRoutineScreenState extends State<CreateRoutineScreen> {
         icon: const Icon(Icons.save),
         label: Text(_isEditing ? 'Save Changes' : 'Create Routine'),
       ),
+    ),
     );
   }
   
@@ -845,7 +913,7 @@ class _CreateRoutineScreenState extends State<CreateRoutineScreen> {
     if (_isEditing) {
       // Update existing routine
       final updated = widget.routineToEdit!.copyWith(
-        name: _nameController.text,
+        name: _nameController.text.trim(),
         steps: _steps,
         recurrence: _recurrence,
         preferredTime: _preferredTime,
@@ -858,7 +926,7 @@ class _CreateRoutineScreenState extends State<CreateRoutineScreen> {
       // Create new routine
       final routine = Routine(
         id: 'routine_${DateTime.now().millisecondsSinceEpoch}',
-        name: _nameController.text,
+        name: _nameController.text.trim(),
         steps: _steps,
         recurrence: _recurrence,
         preferredTime: _preferredTime,
@@ -868,8 +936,9 @@ class _CreateRoutineScreenState extends State<CreateRoutineScreen> {
       routineService.addRoutine(routine);
     }
     
+    final messenger = ScaffoldMessenger.of(context);
     Navigator.of(context).pop();
-    ScaffoldMessenger.of(context).showSnackBar(
+    messenger.showSnackBar(
       SnackBar(
         content: Text(_isEditing ? 'Routine updated!' : 'Routine created!'),
         behavior: SnackBarBehavior.floating,
@@ -908,13 +977,25 @@ class _StepTile extends StatelessWidget {
           children: [
             IconButton(
               icon: const Icon(Icons.edit, size: 20),
+              tooltip: 'Edit step',
               onPressed: onEdit,
             ),
             IconButton(
               icon: const Icon(Icons.delete, size: 20),
+              tooltip: 'Delete step',
               onPressed: onDelete,
             ),
-            const Icon(Icons.drag_handle),
+            ReorderableDragStartListener(
+              index: index,
+              child: const Tooltip(
+                message: 'Drag to reorder',
+                child: SizedBox(
+                  width: 48,
+                  height: 48,
+                  child: Icon(Icons.drag_handle),
+                ),
+              ),
+            ),
           ],
         ),
       ),
@@ -940,6 +1021,7 @@ class _StepDialog extends StatefulWidget {
 class _StepDialogState extends State<_StepDialog> {
   final _actionController = TextEditingController();
   int _minutes = 5;
+  String? _error;
   
   @override
   void initState() {
@@ -967,12 +1049,17 @@ class _StepDialogState extends State<_StepDialog> {
         children: [
           TextField(
             controller: _actionController,
-            decoration: const InputDecoration(
+            decoration: InputDecoration(
               labelText: 'What to do',
               hintText: 'e.g., Make bed',
+              errorText: _error,
             ),
             textCapitalization: TextCapitalization.sentences,
             autofocus: true,
+            onChanged: (_) {
+              if (_error != null) setState(() => _error = null);
+            },
+            onSubmitted: (_) => _save(),
           ),
           const SizedBox(height: 16),
           Row(
@@ -1000,15 +1087,20 @@ class _StepDialogState extends State<_StepDialog> {
           child: const Text('Cancel'),
         ),
         ElevatedButton(
-          onPressed: () {
-            if (_actionController.text.isNotEmpty) {
-              widget.onSave(_actionController.text, _minutes);
-              Navigator.of(context).pop();
-            }
-          },
+          onPressed: _save,
           child: const Text('Save'),
         ),
       ],
     );
+  }
+
+  void _save() {
+    final action = _actionController.text.trim();
+    if (action.isEmpty) {
+      setState(() => _error = 'Describe the step first');
+      return;
+    }
+    widget.onSave(action, _minutes);
+    Navigator.of(context).pop();
   }
 }

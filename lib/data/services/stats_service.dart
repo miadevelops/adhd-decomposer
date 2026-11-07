@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
 /// Service for tracking user statistics
@@ -44,8 +45,18 @@ class StatsService {
   int get totalMinutesSpent => _safeBox.get(keyTotalMinutesSpent, defaultValue: 0);
   set totalMinutesSpent(int value) => _safeBox.put(keyTotalMinutesSpent, value);
   
-  // Current streak
-  int get currentStreak => _safeBox.get(keyCurrentStreak, defaultValue: 0);
+  // Current streak. The stored value is only updated on completion, so a
+  // streak whose last completion was before yesterday is already broken.
+  int get currentStreak {
+    final stored = _safeBox.get(keyCurrentStreak, defaultValue: 0) as int;
+    if (stored == 0) return 0;
+    final now = DateTime.now();
+    final last = lastCompletionDate;
+    if (last == _dateToKey(now) || last == _dateToKey(_daysAgo(now, 1))) {
+      return stored;
+    }
+    return 0;
+  }
   set currentStreak(int value) => _safeBox.put(keyCurrentStreak, value);
   
   // Longest streak
@@ -78,7 +89,8 @@ class StatsService {
     if (stored == null) return {};
     try {
       return Set<String>.from(jsonDecode(stored) as List);
-    } catch (_) {
+    } catch (e) {
+      _backupCorrupt(keyTemplatesUsed, stored, e);
       return {};
     }
   }
@@ -93,10 +105,18 @@ class StatsService {
     if (stored == null) return {};
     try {
       final decoded = jsonDecode(stored) as Map<String, dynamic>;
-      return decoded.map((k, v) => MapEntry(k, v as int));
-    } catch (_) {
+      return decoded.map((k, v) => MapEntry(k, (v as num).toInt()));
+    } catch (e) {
+      _backupCorrupt(keyDailyCompletions, stored, e);
       return {};
     }
+  }
+
+  /// Keep a copy of unreadable data so the next write doesn't destroy it.
+  void _backupCorrupt(String key, Object stored, Object error) {
+    debugPrint('StatsService: could not read "$key": $error');
+    final backupKey = '${key}_corrupt';
+    if (_safeBox.get(backupKey) == null) _safeBox.put(backupKey, stored);
   }
   
   set dailyCompletions(Map<String, int> value) {
@@ -110,7 +130,7 @@ class StatsService {
     final result = <DailyStats>[];
     
     for (int i = 6; i >= 0; i--) {
-      final date = DateTime(now.year, now.month, now.day).subtract(Duration(days: i));
+      final date = _daysAgo(now, i);
       final dateKey = _dateToKey(date);
       result.add(DailyStats(
         date: date,
@@ -176,7 +196,7 @@ class StatsService {
   
   void _updateStreak(DateTime now) {
     final today = _dateToKey(now);
-    final yesterday = _dateToKey(now.subtract(const Duration(days: 1)));
+    final yesterday = _dateToKey(_daysAgo(now, 1));
     final lastDate = lastCompletionDate;
     
     if (lastDate == null) {
@@ -201,13 +221,17 @@ class StatsService {
   }
   
   void _cleanupOldDailyData(Map<String, int> daily, DateTime now) {
-    final cutoff = now.subtract(const Duration(days: 30));
+    final cutoff = _daysAgo(now, 30);
     daily.removeWhere((dateKey, _) {
       final date = _keyToDate(dateKey);
       return date != null && date.isBefore(cutoff);
     });
   }
   
+  /// Calendar-day arithmetic; subtracting 24h Durations drifts across DST.
+  DateTime _daysAgo(DateTime from, int days) =>
+      DateTime(from.year, from.month, from.day - days);
+
   String _dateToKey(DateTime date) {
     return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
   }

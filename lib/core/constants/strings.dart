@@ -32,6 +32,9 @@ class AppStrings {
   static const String youDidIt = "You did it!";
   static const String taskComplete = "Task Complete!";
   static const String backToTasks = "Back to Tasks";
+  static const String allStepsSkippedTitle = "That's okay";
+  static const String allStepsSkippedMessage =
+      "You skipped every step this time. Some days are like that. Come back to it whenever you're ready.";
   
   // Settings
   static const String settings = "Settings";

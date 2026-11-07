@@ -49,7 +49,7 @@ class SoundService {
   }
 
   Future<void> playTaskComplete({String soundId = 'default'}) async {
-    if (!_celebrationSoundEnabled) return;
+    if (!_soundEnabled || !_celebrationSoundEnabled) return;
     try {
       await _player.play(AssetSource(celebrationAssetFor(soundId)));
     } catch (e) {

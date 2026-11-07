@@ -9,6 +9,16 @@ import 'backend_service.dart';
 // Re-export for convenience
 export 'backend_service.dart' show RateLimitException, UsageStats, SubStepsResult;
 
+/// Where the most recent AI result came from.
+enum AIResultSource {
+  /// Tiny Steps backend (counts against the free allowance)
+  backend,
+  /// User's own OpenAI key
+  customKey,
+  /// Built-in offline templates (never counts against the free allowance)
+  offline,
+}
+
 /// Decomposition style modes for different user needs
 enum DecompositionStyle {
   /// Standard mode - balanced detail and encouragement
@@ -24,9 +34,16 @@ class AIService {
   
   final String? defaultApiKey;
   final Uuid _uuid = const Uuid();
-  final BackendService _backend = BackendService();
+  final BackendService _backend;
+
+  /// Source of the last result returned by [decomposeTask] or [getSubSteps].
+  AIResultSource lastSource = AIResultSource.offline;
+
+  /// Server-reported usage from the last backend call, if any.
+  UsageStats? lastUsage;
   
-  AIService({this.defaultApiKey});
+  AIService({this.defaultApiKey, BackendService? backend})
+      : _backend = backend ?? BackendService();
   
   /// Decompose a task into manageable steps
   /// 
@@ -48,7 +65,10 @@ class AIService {
     try {
       final result = await _backend.decomposeTask(taskDescription, style: style);
       if (result != null && result['success'] == true && result['task'] != null) {
-        return _parseBackendResponse(result);
+        final task = _parseBackendResponse(result);
+        lastSource = AIResultSource.backend;
+        lastUsage = result['_usage'] as UsageStats?;
+        return task;
       }
     } on RateLimitException {
       rethrow; // Let the UI handle rate limiting
@@ -85,15 +105,18 @@ class AIService {
         if (response.statusCode == 200) {
           final data = jsonDecode(response.body);
           final content = data['choices'][0]['message']['content'];
-          return _parseAIResponse(taskDescription, content);
+          final task = _parseAIResponse(taskDescription, content);
+          lastSource = AIResultSource.customKey;
+          return task;
         }
       } catch (e) {
         // BYOK failed, continue to mock
       }
     }
     
-    // Final fallback: mock data
-    return _getMockDecomposition(taskDescription, style: style, coach: effectiveCoach);
+    // Final fallback: offline templates
+    lastSource = AIResultSource.offline;
+    return _getMockDecomposition(taskDescription, style: style);
   }
   
   /// Parse response from our backend API
@@ -135,18 +158,8 @@ class AIService {
   }
   
   /// Verify subscription with backend
-  Future<bool> verifySubscription({
-    required String userId,
-    required String productId,
-    required String transactionId,
-    required String platform,
-  }) async {
-    return _backend.verifySubscription(
-      userId: userId,
-      productId: productId,
-      transactionId: transactionId,
-      platform: platform,
-    );
+  Future<bool> verifySubscription({required String revenueCatUserId}) async {
+    return _backend.verifySubscription(revenueCatUserId: revenueCatUserId);
   }
   
   /// Get smaller sub-steps when user is stuck
@@ -163,17 +176,22 @@ class AIService {
     try {
       final result = await _backend.getSubSteps(stepAction, taskContext: taskContext);
       if (result != null && result.substeps.isNotEmpty) {
+        lastSource = AIResultSource.backend;
+        lastUsage = result.usage;
         return result.substeps.map((s) => TaskStep(
           id: _uuid.v4(),
           action: s,
           estimatedMinutes: 2,
         )).toList();
       }
+    } on RateLimitException {
+      rethrow;
     } catch (e) {
       // Backend failed, continue to fallback
     }
     
-    // Fallback to mock
+    // Fallback to offline templates
+    lastSource = AIResultSource.offline;
     return _getMockSubSteps(stepAction);
   }
   
@@ -237,14 +255,6 @@ class AIService {
       case DecompositionStyle.standard:
         return 'Break down this task: "$task"';
     }
-  }
-  
-  /// Build the user prompt for stuck state
-  String _buildStuckUserPrompt(String stepAction, String? stuckReason) {
-    if (stuckReason != null && stuckReason.isNotEmpty) {
-      return 'The user is stuck on: "$stepAction"\nThey said: "$stuckReason"';
-    }
-    return 'The user is stuck on: "$stepAction"';
   }
   
   /// Detect the type of task for context-aware prompting
@@ -329,27 +339,7 @@ class AIService {
     return _getMockDecomposition(originalTask);
   }
   
-  List<TaskStep> _parseSubSteps(String content) {
-    try {
-      final jsonMatch = RegExp(r'\[[\s\S]*\]').firstMatch(content);
-      if (jsonMatch != null) {
-        final json = jsonDecode(jsonMatch.group(0)!) as List;
-        return json.map((step) {
-          return TaskStep(
-            id: _uuid.v4(),
-            action: step['action'] ?? step['step'] ?? '',
-            estimatedMinutes: step['minutes'] ?? 2,
-          );
-        }).toList();
-      }
-    } catch (e) {
-      // Fall through to mock
-    }
-    return [];
-  }
-  
-  Task _getMockDecomposition(String taskDescription, {DecompositionStyle style = DecompositionStyle.standard, Coach? coach}) {
-    final effectiveCoach = coach ?? Coaches.default_;
+  Task _getMockDecomposition(String taskDescription, {DecompositionStyle style = DecompositionStyle.standard}) {
     // Intelligent mock based on common tasks
     final lowerTask = taskDescription.toLowerCase();
     
@@ -729,27 +719,4 @@ Output format (JSON only, no explanation before or after):
     {"action": "Put all dishes in sink", "minutes": 3}
   ]
 }''';
-
-  static const String _stuckPrompt = '''
-The user is stuck on a step and needs help. This is normal and valid - ADHD brains can get stuck even on "simple" things.
-
-Your job:
-1. Break the step into even smaller micro-actions (2-4 steps, 1-3 minutes each)
-2. Start with a grounding/physical action (breathe, stand up, move 3 steps)
-3. Include sensory grounding if appropriate (5-4-3-2-1: things you see/hear/feel)
-4. Make the first action almost laughably small ("just touch the thing")
-5. Be warm and non-judgmental
-
-Strategies to offer through your steps:
-- "Just 10 seconds" approach
-- Body doubling suggestion (turn on a video, call a friend)
-- Environment shift (change rooms, change position)
-- Grounding first (breath work, name 3 things you see)
-
-Output format (JSON array only, no extra text):
-[
-  {"action": "🌬️ Pause. Take one slow breath in... and out", "minutes": 1},
-  {"action": "👀 Ground yourself: Name 3 things you can see right now", "minutes": 1},
-  {"action": "🦶 Stand up and take 3 steps toward where you need to be", "minutes": 1}
-]''';
 }

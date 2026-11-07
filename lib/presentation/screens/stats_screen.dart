@@ -14,6 +14,7 @@ import '../widgets/share_card.dart';
 import 'achievements_screen.dart';
 import 'level_progression_screen.dart';
 import 'personalization_screen.dart';
+import '../../core/theme/motion.dart';
 
 class StatsScreen extends StatefulWidget {
   const StatsScreen({super.key});
@@ -62,7 +63,7 @@ class _StatsScreenState extends State<StatsScreen> {
   }
 
   void _showLevelUpCelebration(LevelUpEvent levelUp) {
-    _confettiController.play();
+    if (!shouldReduceMotion(context)) _confettiController.play();
     HapticFeedback.heavyImpact();
 
     showDialog(
@@ -77,12 +78,19 @@ class _StatsScreenState extends State<StatsScreen> {
             if (mounted) _checkForCelebration();
           });
         },
+        onSeeRewards: () {
+          Navigator.of(ctx).pop();
+          context.read<XPService>().clearPendingLevelUp();
+          Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const PersonalizationScreen()),
+          );
+        },
       ),
     );
   }
 
   void _showAchievementCelebration(Achievement achievement) {
-    _confettiController.play();
+    if (!shouldReduceMotion(context)) _confettiController.play();
 
     showDialog(
       context: context,
@@ -136,17 +144,16 @@ class _StatsScreenState extends State<StatsScreen> {
             const SizedBox(height: 24),
             ElevatedButton.icon(
               onPressed: () async {
-                Navigator.pop(ctx);
-                await ShareService.captureAndShare(
-                  key: _shareCardKey,
+                // Capture before closing the sheet - the card is gone after.
+                final bytes = await ShareService.capture(_shareCardKey);
+                if (ctx.mounted) Navigator.pop(ctx);
+                final shared = await ShareService.share(
+                  imageBytes: bytes,
                   shareText:
                       'My Tiny Steps Progress: ${stats.currentStreak} day streak 🔥, ${stats.totalTasksCompleted} tasks completed! #TinySteps #ProductivityWin',
                   subject: 'My Tiny Steps Progress',
                 );
-                // Track the share
-                if (mounted) {
-                  stats.recordShare();
-                }
+                if (shared) stats.recordShare();
               },
               icon: const Icon(Icons.share),
               label: const Text('Share'),
@@ -417,6 +424,9 @@ class _StatsScreenState extends State<StatsScreen> {
     final last7Days = stats.getLast7DaysStats();
     final maxValue = last7Days.map((d) => d.tasksCompleted).fold<int>(0, max);
     final chartMax = maxValue > 0 ? maxValue : 1;
+    final reduceMotion = shouldReduceMotion(context);
+    // Leave room for the count and day labels as text scales up.
+    final chartHeight = 72 + MediaQuery.textScalerOf(context).scale(48);
 
     return ExpansionTile(
       leading: const Icon(Icons.calendar_view_week_outlined),
@@ -426,7 +436,7 @@ class _StatsScreenState extends State<StatsScreen> {
         Padding(
           padding: const EdgeInsets.fromLTRB(12, 8, 12, 16),
           child: SizedBox(
-            height: 120,
+            height: chartHeight,
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: last7Days.asMap().entries.map((entry) {
@@ -436,9 +446,28 @@ class _StatsScreenState extends State<StatsScreen> {
                     ? (day.tasksCompleted / chartMax).clamp(0.0, 1.0)
                     : 0.08;
                 final isToday = index == last7Days.length - 1;
+                final bar = FractionallySizedBox(
+                  heightFactor: heightFactor,
+                  widthFactor: 1,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: isToday
+                          ? Theme.of(context).colorScheme.primary
+                          : Theme.of(context)
+                              .colorScheme
+                              .primary
+                              .withValues(alpha: 0.4),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                  ),
+                );
 
                 return Expanded(
-                  child: Padding(
+                  child: Semantics(
+                    label:
+                        '${day.dayName}${isToday ? ', today' : ''}: ${day.tasksCompleted} ${day.tasksCompleted == 1 ? 'task' : 'tasks'} completed',
+                    excludeSemantics: true,
+                    child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 4),
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.end,
@@ -455,30 +484,18 @@ class _StatsScreenState extends State<StatsScreen> {
                         Expanded(
                           child: Align(
                             alignment: Alignment.bottomCenter,
-                            child: FractionallySizedBox(
-                              heightFactor: heightFactor,
-                              widthFactor: 1,
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  color: isToday
-                                      ? Theme.of(context).colorScheme.primary
-                                      : Theme.of(context)
-                                          .colorScheme
-                                          .primary
-                                          .withOpacity(0.4),
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                              ),
-                            )
-                                .animate(
-                                  delay: Duration(milliseconds: index * 80),
-                                )
-                                .scaleY(
-                                  begin: 0,
-                                  end: 1,
-                                  alignment: Alignment.bottomCenter,
-                                )
-                                .fadeIn(),
+                            child: reduceMotion
+                                ? bar
+                                : bar
+                                    .animate(
+                                      delay: Duration(milliseconds: index * 80),
+                                    )
+                                    .scaleY(
+                                      begin: 0,
+                                      end: 1,
+                                      alignment: Alignment.bottomCenter,
+                                    )
+                                    .fadeIn(),
                           ),
                         ),
                         const SizedBox(height: 8),
@@ -493,6 +510,7 @@ class _StatsScreenState extends State<StatsScreen> {
                         ),
                       ],
                     ),
+                  ),
                   ),
                 );
               }).toList(),
@@ -858,7 +876,10 @@ class _AchievementUnlockedDialog extends StatelessWidget {
               '🎉',
               style: TextStyle(fontSize: 48),
             )
-                .animate(onPlay: (c) => c.repeat())
+                .animate(
+                  onPlay: (c) =>
+                      shouldReduceMotion(context) ? c.stop() : c.repeat(),
+                )
                 .shake(hz: 2, duration: const Duration(milliseconds: 500))
                 .then()
                 .scale(begin: const Offset(1, 1), end: const Offset(1.2, 1.2))
@@ -875,7 +896,7 @@ class _AchievementUnlockedDialog extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
+                color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(16),
               ),
               child: Column(
@@ -925,10 +946,12 @@ class _AchievementUnlockedDialog extends StatelessWidget {
 class _LevelUpDialog extends StatelessWidget {
   final LevelUpEvent levelUp;
   final VoidCallback onDismiss;
+  final VoidCallback onSeeRewards;
 
   const _LevelUpDialog({
     required this.levelUp,
     required this.onDismiss,
+    required this.onSeeRewards,
   });
 
   @override
@@ -949,11 +972,16 @@ class _LevelUpDialog extends StatelessWidget {
           ),
           if (levelUp.hasUnlocks) ...[
             const SizedBox(height: 16),
-            const Text('New rewards are ready in the Rewards section.'),
+            const Text('You unlocked new rewards!'),
           ],
         ],
       ),
       actions: [
+        if (levelUp.hasUnlocks)
+          TextButton(
+            onPressed: onSeeRewards,
+            child: const Text('See rewards'),
+          ),
         FilledButton(
           onPressed: onDismiss,
           child: const Text('Continue'),

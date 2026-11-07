@@ -1,10 +1,11 @@
-import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import '../../data/models/task.dart';
 import '../../data/models/coach.dart';
+import '../../data/models/routine.dart';
 import '../../data/coaches.dart';
 import '../../data/services/ai_service.dart';
+import '../../data/services/json_list_storage.dart';
 import '../../data/services/settings_service.dart';
 import '../../data/services/stats_service.dart';
 import '../../data/services/achievements_service.dart';
@@ -29,7 +30,7 @@ class TaskProvider extends ChangeNotifier {
   final AchievementsService? _achievements;
   final NotificationService? _notifications;
   PurchaseService? _purchases;
-  XPService? _xpService;
+  final XPService? _xpService;
   List<Task> _tasks = [];
   Task? _activeTask;
   bool _isLoading = false;
@@ -52,9 +53,74 @@ class TaskProvider extends ChangeNotifier {
         _notifications = notifications,
         _purchases = purchases,
         _xpService = xpService {
-    if (_purchases != null && _settings != null) {
-      _settings.syncPremiumStatus(_purchases!.isPremium);
+    _attachPurchases(_purchases);
     }
+
+  bool _backendPremiumLinked = false;
+
+  void _attachPurchases(PurchaseService? purchases) {
+    if (purchases == null) return;
+    purchases.addListener(_onPurchasesChanged);
+    _settings?.syncPremiumStatus(purchases.isPremium);
+    if (purchases.isPremium) _linkPremiumWithBackend();
+  }
+
+  void _onPurchasesChanged() {
+    final purchases = _purchases;
+    if (purchases == null) return;
+    _settings?.syncPremiumStatus(purchases.isPremium);
+    if (purchases.isPremium) {
+      _linkPremiumWithBackend();
+    } else {
+      _backendPremiumLinked = false;
+    }
+    notifyListeners();
+  }
+
+  /// Tell the backend which RevenueCat customer this device belongs to so it
+  /// can verify premium server-side. Returns the backend's premium verdict.
+  Future<bool> _linkPremiumWithBackend({bool force = false}) async {
+    if (_backendPremiumLinked && !force) return true;
+    final appUserId = await _purchases?.getAppUserId();
+    if (appUserId == null || appUserId.isEmpty) return false;
+    final verified =
+        await _aiService.verifySubscription(revenueCatUserId: appUserId);
+    _backendPremiumLinked = verified;
+    return verified;
+  }
+
+  /// Runs an AI call; if the backend says the free allowance is used up but
+  /// RevenueCat says this user is premium, re-link and retry once.
+  Future<T> _withPremiumRetry<T>(Future<T> Function() call) async {
+    try {
+      return await call();
+    } on RateLimitException catch (e) {
+      if (e.isFreeLimitReached &&
+          isPremium &&
+          await _linkPremiumWithBackend(force: true)) {
+        return call();
+      }
+      rethrow;
+    }
+  }
+
+  /// Count an AI call against the free allowance, preferring the server's count.
+  /// Offline-template results are never counted.
+  void _recordAiUsage() {
+    if (_aiService.lastSource != AIResultSource.backend) return;
+    if (isPremium || hasCustomApiKey) return;
+    final usage = _aiService.lastUsage;
+    if (usage != null && !usage.isUnlimited) {
+      _settings?.syncDecompositionCount(usage.used);
+    } else {
+      _settings?.incrementDecompositionCount();
+    }
+  }
+
+  @override
+  void dispose() {
+    _purchases?.removeListener(_onPurchasesChanged);
+    super.dispose();
   }
 
   List<Task> get tasks => _tasks;
@@ -75,6 +141,8 @@ class TaskProvider extends ChangeNotifier {
       isPremium ||
       hasCustomApiKey ||
       !(_settings?.hasReachedFreeLimit ?? false);
+  /// Remaining free breakdowns (task and "I'm stuck" share one lifetime pool).
+  /// -1 means unlimited. The backend is the source of truth for the count.
   int get remainingFreeDecompositions =>
       _settings?.remainingFreeDecompositions ?? -1;
 
@@ -196,31 +264,22 @@ class TaskProvider extends ChangeNotifier {
   /// Set or update the PurchaseService reference
   /// This allows premium status updates to propagate
   void setPurchaseService(PurchaseService? purchases) {
-    _purchases = purchases;
-    // Sync cached premium status
-    if (purchases != null && _settings != null) {
-      _settings.syncPremiumStatus(purchases.isPremium);
+    if (identical(purchases, _purchases)) {
+      notifyListeners();
+      return;
     }
+    _purchases?.removeListener(_onPurchasesChanged);
+    _purchases = purchases;
+    _backendPremiumLinked = false;
+    _attachPurchases(purchases);
     notifyListeners();
   }
 
   Future<void> initialize() async {
     try {
       final box = await Hive.openBox<String>('tasks');
-      final tasksJson = box.get('tasksList');
-      if (tasksJson != null && tasksJson.isNotEmpty) {
-        final List<Task> decoded = [];
-        for (final s in tasksJson.split('|||')) {
-          if (s.isNotEmpty) {
-            try {
-              decoded.add(Task.fromJson(jsonDecode(s)));
-            } catch (e) {
-              debugPrint('Error parsing task: $e');
-            }
-          }
-        }
-        _tasks = decoded;
-      }
+      _tasks = await JsonListStorage.load(box, 'tasksList', Task.fromJson);
+      _tasksLoaded = true;
     } catch (e) {
       debugPrint('Error loading tasks: $e');
       _tasks = [];
@@ -228,10 +287,18 @@ class TaskProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// False until stored tasks are read successfully; saving is blocked until
+  /// then so a failed load can't wipe the user's saved tasks.
+  bool _tasksLoaded = false;
+
   Future<void> _saveTasks() async {
+    if (!_tasksLoaded) {
+      debugPrint('TaskProvider: skipping save because tasks failed to load');
+      return;
+    }
     try {
       final box = await Hive.openBox<String>('tasks');
-      final encoded = _tasks.map((t) => jsonEncode(t.toJson())).join('|||');
+      final encoded = JsonListStorage.encode(_tasks, (Task t) => t.toJson());
       await box.put('tasksList', encoded);
     } catch (e) {
       debugPrint('Error saving tasks: $e');
@@ -249,27 +316,81 @@ class TaskProvider extends ChangeNotifier {
       final style =
           _settings?.decompositionStyle ?? DecompositionStyle.standard;
       final coach = _settings?.selectedCoach ?? Coaches.default_;
-      final task = await _aiService.decomposeTask(
+      final task = await _withPremiumRetry(() => _aiService.decomposeTask(
         description,
         apiKey: apiKey,
         style: style,
         coach: coach,
-      );
+          ));
       _tasks.insert(0, task);
       await _saveTasks();
 
-      // Track decomposition count
-      _settings?.incrementDecompositionCount();
+      _recordAiUsage();
 
       _isLoading = false;
       notifyListeners();
       return task;
+    } on RateLimitException catch (e) {
+      if (e.isFreeLimitReached) {
+        _settings?.markFreeLimitReached();
+      }
+      _error = friendlyError(e);
+      _isLoading = false;
+      notifyListeners();
+      return null;
     } catch (e) {
-      _error = e.toString();
+      debugPrint('Task breakdown failed: $e');
+      _error = friendlyError(e);
       _isLoading = false;
       notifyListeners();
       return null;
     }
+  }
+
+  /// User-facing text for an AI failure (never raw exception text).
+  static String friendlyError(Object e) {
+    if (e is RateLimitException) {
+      return e.isFreeLimitReached
+          ? "You've used your free breakdowns."
+          : 'Lots of requests right now. Give it a minute and try again.';
+    }
+    return "Couldn't break that down right now. Check your connection and try again.";
+  }
+
+  /// Steps of a plan that can still be edited (not done or skipped yet).
+  bool canEditStep(Task task, int index) =>
+      index >= task.currentStepIndex && index < task.steps.length;
+
+  /// Rewords or re-times one upcoming step of a plan.
+  void updateStep(Task task, int index,
+      {String? action, int? estimatedMinutes}) {
+    if (!canEditStep(task, index)) return;
+    final step = task.steps[index];
+    if (action != null && action.trim().isNotEmpty) {
+      step.action = action.trim();
+    }
+    if (estimatedMinutes != null && estimatedMinutes > 0) {
+      step.estimatedMinutes = estimatedMinutes;
+    }
+    _recalculateEstimate(task);
+    _saveTasks();
+    _updateWidget();
+    notifyListeners();
+  }
+
+  /// Removes one upcoming step. A plan always keeps at least one step.
+  void removeStep(Task task, int index) {
+    if (!canEditStep(task, index) || task.steps.length <= 1) return;
+    task.steps.removeAt(index);
+    _recalculateEstimate(task);
+    _saveTasks();
+    _updateWidget();
+    notifyListeners();
+  }
+
+  void _recalculateEstimate(Task task) {
+    task.totalEstimatedMinutes =
+        task.steps.fold<int>(0, (sum, s) => sum + s.estimatedMinutes);
   }
 
   void setActiveTask(Task? task) {
@@ -304,37 +425,8 @@ class TaskProvider extends ChangeNotifier {
       // Update notification activity (resets 2-hour timer)
       _notifications?.updateTaskActivity();
 
-      // If task is now completed, record task completion
       if (!wasCompleted && _activeTask!.isCompleted) {
-        _stats?.recordTaskCompletion();
-
-        // Award XP for task completion
-        _xpService?.awardTaskComplete(
-          usedTimer: _usedTimerThisTask,
-          isFromTemplate: _isFromTemplate,
-        );
-
-        // Award streak bonus if applicable
-        final currentStreak = _stats?.currentStreak ?? 0;
-        if (currentStreak > 0) {
-          _xpService?.awardStreakBonus(currentStreak);
-        }
-
-        // Reset task-specific flags
-        _usedTimerThisTask = false;
-        _isFromTemplate = false;
-
-        // Check for new achievements
-        _achievements?.checkAndUnlockAchievements();
-
-        // Donate intent for Siri to suggest starting another task
-        SiriService().donateTaskCompleted('task');
-
-        // Clear unfinished task reminder and schedule streak reminder
-        _notifications?.clearUnfinishedTaskReminder();
-        if (currentStreak >= 2) {
-          _notifications?.scheduleStreakReminder(currentStreak);
-        }
+        _onTaskEnded(_activeTask!);
       }
 
       _saveTasks();
@@ -345,10 +437,15 @@ class TaskProvider extends ChangeNotifier {
 
   void skipCurrentStep() {
     if (_activeTask != null) {
+      final wasCompleted = _activeTask!.isCompleted;
       _activeTask!.skipCurrentStep();
 
       // Update notification activity (resets 2-hour timer)
       _notifications?.updateTaskActivity();
+
+      if (!wasCompleted && _activeTask!.isCompleted) {
+        _onTaskEnded(_activeTask!);
+      }
 
       _saveTasks();
       _updateWidget();
@@ -356,17 +453,47 @@ class TaskProvider extends ChangeNotifier {
     }
   }
 
-  /// Check if user can break down current step (has remaining free uses or is premium)
-  bool get canBreakDownForFree {
-    if (isPremium || hasCustomApiKey) return true;
-    return !(_settings?.hasReachedFreeLimit ?? true);
-  }
+  /// Single path for a task reaching its end, whether the last step was
+  /// completed or skipped. Only tasks with real progress earn rewards.
+  void _onTaskEnded(Task task) {
+    _notifications?.clearUnfinishedTaskReminder();
 
-  /// Remaining free breakdowns (global lifetime limit)
-  int get remainingFreeBreakdowns {
-    if (isPremium || hasCustomApiKey) return 999; // Unlimited
-    return _settings?.remainingFreeDecompositions ?? 0;
-  }
+    if (task.endedWithoutProgress) {
+      _usedTimerThisTask = false;
+      _isFromTemplate = false;
+      return;
+    }
+
+        _stats?.recordTaskCompletion();
+
+        _xpService?.awardTaskComplete(
+          usedTimer: _usedTimerThisTask,
+          isFromTemplate: _isFromTemplate,
+        );
+
+        final currentStreak = _stats?.currentStreak ?? 0;
+        if (currentStreak > 0) {
+          _xpService?.awardStreakBonus(currentStreak);
+        }
+
+        _usedTimerThisTask = false;
+        _isFromTemplate = false;
+
+        _achievements?.checkAndUnlockAchievements();
+
+        // Donate intent for Siri to suggest starting another task
+    SiriService().donateTaskCompleted(task.title);
+
+        if (currentStreak >= 2) {
+          _notifications?.scheduleStreakReminder(currentStreak);
+        }
+      }
+
+  /// Check if user can break down current step (has remaining free uses or is premium)
+  bool get canBreakDownForFree => canDecompose;
+
+  /// Remaining free breakdowns (global lifetime limit). -1 means unlimited.
+  int get remainingFreeBreakdowns => remainingFreeDecompositions;
 
   /// Break down the current step into smaller sub-steps using AI
   /// Returns false if user hit the limit and isn't premium
@@ -375,10 +502,7 @@ class TaskProvider extends ChangeNotifier {
       throw Exception('No active step to break down');
     }
 
-    // Check if user can break down (premium, custom API key, or has free uses left)
-    if (!isPremium &&
-        !hasCustomApiKey &&
-        (_settings?.hasReachedFreeLimit ?? true)) {
+    if (!canDecompose) {
       return false; // Signal that user hit the limit
     }
 
@@ -391,20 +515,29 @@ class TaskProvider extends ChangeNotifier {
 
     // Get sub-steps from AI (pass task title as context)
     final apiKey = _settings?.openAIApiKey;
-    final subSteps = await _aiService.getSubSteps(
+    final taskContext = _activeTask!.title;
+    final List<TaskStep> subSteps;
+    try {
+      subSteps = await _withPremiumRetry(() => _aiService.getSubSteps(
       currentStep.action,
       apiKey,
-      taskContext: _activeTask!.title,
-    );
+            taskContext: taskContext,
+          ));
+    } on RateLimitException catch (e) {
+      if (e.isFreeLimitReached) {
+        _settings?.markFreeLimitReached();
+        notifyListeners();
+        return false;
+      }
+      rethrow;
+    }
 
     if (subSteps.isEmpty) {
       throw Exception('Could not break down this step further');
     }
 
-    // Increment global usage counter (counts against lifetime limit)
-    if (!isPremium && !hasCustomApiKey) {
-      _settings?.incrementDecompositionCount();
-    }
+    // Counts against the same lifetime free allowance as task breakdowns
+    _recordAiUsage();
 
     // Store substeps inside the current step (not replacing in main list)
     currentStep.subSteps = subSteps;
@@ -425,17 +558,62 @@ class TaskProvider extends ChangeNotifier {
 
   Future<List<TaskStep>> getSubSteps(String stepAction) async {
     final apiKey = _settings?.openAIApiKey;
-    return await _aiService.getSubSteps(stepAction, apiKey);
+    return _aiService.getSubSteps(stepAction, apiKey);
   }
 
-  void deleteTask(String taskId) {
-    _tasks.removeWhere((t) => t.id == taskId);
+  /// Removes a task. Returns a callback that puts it back (for "Undo"),
+  /// or null if no task had that id.
+  VoidCallback? deleteTask(String taskId) {
+    final index = _tasks.indexWhere((t) => t.id == taskId);
+    if (index == -1) return null;
+    final removed = _tasks.removeAt(index);
     if (_activeTask?.id == taskId) {
       _activeTask = null;
       _notifications?.clearUnfinishedTaskReminder();
     }
     _saveTasks();
     notifyListeners();
+
+    return () {
+      if (_tasks.any((t) => t.id == removed.id)) return;
+      _tasks.insert(index.clamp(0, _tasks.length), removed);
+      _saveTasks();
+      notifyListeners();
+    };
+  }
+
+  /// Starts [routine] and makes it the active task. Resumes today's
+  /// unfinished run instead of adding a duplicate; unfinished runs from
+  /// earlier days are dropped so the routine starts fresh.
+  Task startRoutine(Routine routine) {
+    final prefix = 'routine_${routine.id}_';
+    final now = DateTime.now();
+    bool isToday(DateTime d) =>
+        d.year == now.year && d.month == now.month && d.day == now.day;
+
+    Task? task;
+    final before = _tasks.length;
+    _tasks.removeWhere((t) {
+      if (!t.id.startsWith(prefix) || t.isCompleted) return false;
+      if (task == null && isToday(t.createdAt)) {
+        task = t;
+        return false;
+      }
+      return true;
+    });
+
+    final resumed = task;
+    final Task result;
+    if (resumed != null) {
+      result = resumed;
+      if (_tasks.length != before) _saveTasks();
+    } else {
+      result = routine.toTask();
+      _tasks.insert(0, result);
+      _saveTasks();
+    }
+    setActiveTask(result);
+    return result;
   }
 
   /// Add a task from a template (no AI decomposition needed)
@@ -445,12 +623,21 @@ class TaskProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  void clearAllTasks() {
+  /// Removes every task. Returns a callback that restores them (for "Undo").
+  VoidCallback clearAllTasks() {
+    final removed = List<Task>.of(_tasks);
     _tasks.clear();
     _activeTask = null;
     _notifications?.clearUnfinishedTaskReminder();
     _saveTasks();
     notifyListeners();
+
+    return () {
+      final existingIds = _tasks.map((t) => t.id).toSet();
+      _tasks.addAll(removed.where((t) => !existingIds.contains(t.id)));
+      _saveTasks();
+      notifyListeners();
+    };
   }
 
   void clearError() {
@@ -481,11 +668,5 @@ class TaskProvider extends ChangeNotifier {
     _stats?.recordTemplateUsed(templateId);
     _isFromTemplate = true;
     _achievements?.checkAndUnlockAchievements();
-  }
-
-  /// Set the XP service reference
-  void setXPService(XPService? xpService) {
-    _xpService = xpService;
-    notifyListeners();
   }
 }

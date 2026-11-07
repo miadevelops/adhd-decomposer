@@ -1,8 +1,8 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import '../models/routine.dart';
 import '../models/task.dart';
+import 'json_list_storage.dart';
 
 /// Service for managing recurring routines
 class RoutineService extends ChangeNotifier {
@@ -41,21 +41,7 @@ class RoutineService extends ChangeNotifier {
     
     try {
       final box = await Hive.openBox<String>(_boxName);
-      final routinesJson = box.get('routinesList');
-      
-      if (routinesJson != null && routinesJson.isNotEmpty) {
-        final List<Routine> decoded = [];
-        for (final s in routinesJson.split('|||')) {
-          if (s.isNotEmpty) {
-            try {
-              decoded.add(Routine.fromJson(jsonDecode(s)));
-            } catch (e) {
-              debugPrint('Error parsing routine: $e');
-            }
-          }
-        }
-        _routines = decoded;
-      }
+      _routines = await JsonListStorage.load(box, 'routinesList', Routine.fromJson);
       _initialized = true;
     } catch (e) {
       debugPrint('Error loading routines: $e');
@@ -66,9 +52,14 @@ class RoutineService extends ChangeNotifier {
   
   /// Save routines to storage
   Future<void> _saveRoutines() async {
+    // Never overwrite stored routines we failed to read
+    if (!_initialized) {
+      debugPrint('RoutineService: skipping save because routines failed to load');
+      return;
+    }
     try {
       final box = await Hive.openBox<String>(_boxName);
-      final encoded = _routines.map((r) => jsonEncode(r.toJson())).join('|||');
+      final encoded = JsonListStorage.encode(_routines, (Routine r) => r.toJson());
       await box.put('routinesList', encoded);
     } catch (e) {
       debugPrint('Error saving routines: $e');
@@ -103,7 +94,7 @@ class RoutineService extends ChangeNotifier {
   Future<void> markRoutineComplete(String routineId) async {
     final index = _routines.indexWhere((r) => r.id == routineId);
     if (index != -1) {
-      _routines[index].markComplete();
+      if (!_routines[index].markComplete()) return;
       await _saveRoutines();
       notifyListeners();
     }

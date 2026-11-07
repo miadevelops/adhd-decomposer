@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:intl/intl.dart';
 import 'package:purchases_flutter/purchases_flutter.dart';
 
 /// Error types for purchase operations
@@ -48,8 +49,16 @@ class PurchaseException implements Exception {
 /// Service for managing in-app purchases via RevenueCat
 class PurchaseService extends ChangeNotifier {
   // RevenueCat API keys
-  static const String _androidApiKey = 'goog_AlilYWerPjIQtwOfMamxRVObQmx';
-  static const String _iosApiKey = 'appl_VVZzBmKhtHZJuvUwfgXgNAIqsgE';
+  // Public RevenueCat SDK keys; override per build with
+  // --dart-define=REVENUECAT_ANDROID_KEY=... / REVENUECAT_IOS_KEY=...
+  static const String _androidApiKey = String.fromEnvironment(
+    'REVENUECAT_ANDROID_KEY',
+    defaultValue: 'goog_AlilYWerPjIQtwOfMamxRVObQmx',
+  );
+  static const String _iosApiKey = String.fromEnvironment(
+    'REVENUECAT_IOS_KEY',
+    defaultValue: 'appl_VVZzBmKhtHZJuvUwfgXgNAIqsgE',
+  );
   
   // Entitlement ID configured in RevenueCat
   static const String _entitlementId = 'entl2de33d59e5';
@@ -357,6 +366,35 @@ class PurchaseService extends ChangeNotifier {
     return getPrice(yearly) / 12;
   }
   
+  /// Yearly plan price per month, formatted in the store's currency.
+  String? getYearlyMonthlyEquivalentFormatted() {
+    final yearly = yearlyPackage;
+    if (yearly == null) return null;
+    
+    final product = yearly.storeProduct;
+    final storeString = product.pricePerMonthString;
+    if (storeString != null && storeString.isNotEmpty) return storeString;
+    
+    try {
+      return NumberFormat.simpleCurrency(name: product.currencyCode)
+          .format(product.price / 12);
+    } catch (_) {
+      return null;
+    }
+  }
+  
+  /// RevenueCat app user ID for this install, used to link the device to the
+  /// backend so it can verify premium status server-side.
+  Future<String?> getAppUserId() async {
+    if (!_isConfigured) return null;
+    try {
+      return await Purchases.appUserID;
+    } catch (e) {
+      debugPrint('PurchaseService: Error getting app user ID: $e');
+      return null;
+    }
+  }
+
   /// Set user ID for attribution (optional)
   Future<void> setUserId(String userId) async {
     if (!_isConfigured) return;

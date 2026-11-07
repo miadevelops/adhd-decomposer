@@ -1,9 +1,11 @@
 /// Helper utilities for screenshot tests.
 /// 
 /// Provides functions to set up the app state for visually appealing screenshots.
+library;
 
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
 /// Extension on IntegrationTestWidgetsFlutterBinding for screenshot helpers.
@@ -13,14 +15,9 @@ extension ScreenshotExtension on IntegrationTestWidgetsFlutterBinding {
   /// The [name] should be in format like '01_onboarding_en' and will be
   /// saved as '01_onboarding_en.png'.
   Future<void> takeScreenshotToFile(String name) async {
-    // Convert Flutter surface to image for screenshot
-    await convertFlutterSurfaceToImage();
-    
-    // Take the screenshot - the framework handles saving
+    // On Android, takeScreenshot converts the Flutter surface to an image on
+    // first use; the driver handles saving.
     await takeScreenshot(name);
-    
-    // Revert the surface conversion
-    await revertFlutterImage();
   }
 }
 

@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:provider/provider.dart';
-import '../../../data/coaches.dart';
-import '../../../data/models/coach.dart';
+import '../../../core/theme/motion.dart';
 import '../../providers/task_provider.dart';
 
 class CoachPickerPage extends StatefulWidget {
@@ -15,23 +14,36 @@ class CoachPickerPage extends StatefulWidget {
 }
 
 class _CoachPickerPageState extends State<CoachPickerPage> {
-  CoachType? _selectedCoach;
+  late CoachType _selectedCoach;
   
-  // Show all coaches – free ones selectable, premium ones shown disabled
+  // Show all coaches – free ones selectable, premium ones shown locked
   final List<Coach> _allCoaches = Coaches.all;
 
+  @override
+  void initState() {
+    super.initState();
+    final current = context.read<TaskProvider>().selectedCoachType;
+    _selectedCoach =
+        Coaches.isFreeCoach(current) ? current : CoachType.default_;
+  }
+
   void _selectCoach(Coach coach) {
-    if (!Coaches.isFreeCoch(coach.type)) return; // guard against premium taps
+    if (!Coaches.isFreeCoach(coach.type)) return;
     setState(() => _selectedCoach = coach.type);
-    
-    // Save selection
-    final provider = context.read<TaskProvider>();
-    provider.setSelectedCoach(coach.type);
-    
-    // Auto-advance after brief delay
-    Future.delayed(const Duration(milliseconds: 400), () {
-      if (mounted) widget.onNext();
-    });
+    context.read<TaskProvider>().setSelectedCoach(coach.type);
+  }
+
+  void _showLockedCoach(Coach coach) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(
+            '${coach.name} is a Pro coach. You can switch to it any time '
+            'from Settings after upgrading.',
+          ),
+        ),
+      );
   }
 
   @override
@@ -66,18 +78,23 @@ class _CoachPickerPageState extends State<CoachPickerPage> {
               itemCount: _allCoaches.length,
               itemBuilder: (context, index) {
                 final coach = _allCoaches[index];
-                final isFree = Coaches.isFreeCoch(coach.type);
+                final isFree = Coaches.isFreeCoach(coach.type);
                 final isSelected = _selectedCoach == coach.type;
                 
-                return Padding(
+                final card = Padding(
                   padding: const EdgeInsets.only(bottom: 12),
                   child: _CoachCard(
                     coach: coach,
                     isSelected: isSelected,
                     isLocked: !isFree,
-                    onTap: isFree ? () => _selectCoach(coach) : null,
+                    onTap: isFree
+                        ? () => _selectCoach(coach)
+                        : () => _showLockedCoach(coach),
                   ),
-                ).animate()
+                );
+                if (shouldReduceMotion(context)) return card;
+                return card
+                    .animate()
                     .fadeIn(delay: Duration(milliseconds: 200 + index * 80))
                     .slideX(begin: 0.15, end: 0);
               },
@@ -85,6 +102,17 @@ class _CoachPickerPageState extends State<CoachPickerPage> {
           ),
           
           const SizedBox(height: 16),
+
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton(
+              onPressed: widget.onNext,
+              style: FilledButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 14),
+              ),
+              child: const Text('Continue'),
+            ),
+          ),
         ],
       ),
     );
@@ -106,9 +134,14 @@ class _CoachCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final dimOpacity = isLocked ? 0.45 : 1.0;
+    final dimOpacity = isLocked ? 0.7 : 1.0;
 
-    return Opacity(
+    return MergeSemantics(
+      child: Semantics(
+        button: true,
+        selected: isSelected,
+        hint: isLocked ? 'Requires Pro' : null,
+        child: Opacity(
       opacity: dimOpacity,
       child: Material(
         color: isSelected
@@ -208,6 +241,8 @@ class _CoachCard extends StatelessWidget {
               ],
             ),
           ),
+        ),
+      ),
         ),
       ),
     );

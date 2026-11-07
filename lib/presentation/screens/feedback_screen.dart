@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import '../../data/services/analytics_service.dart';
+import '../../data/services/backend_service.dart';
 
-/// Simple feedback form for users who want to share what could be better
-/// MVP version just shows success message - no backend submission yet
+/// Simple feedback form for users who want to share what could be better.
+/// Submissions are sent to the Tiny Steps backend.
 class FeedbackScreen extends StatefulWidget {
-  const FeedbackScreen({super.key});
+  final BackendService? backend;
+
+  const FeedbackScreen({super.key, this.backend});
 
   @override
   State<FeedbackScreen> createState() => _FeedbackScreenState();
@@ -17,6 +20,7 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
   final _emailController = TextEditingController();
   bool _isSubmitting = false;
   bool _isSubmitted = false;
+  late final BackendService _backend = widget.backend ?? BackendService();
   
   @override
   void dispose() {
@@ -32,26 +36,32 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
       _isSubmitting = true;
     });
     
-    // Simulate network delay for MVP
-    await Future.delayed(const Duration(milliseconds: 500));
-    
-    // Track the event
-    final analytics = AnalyticsService();
-    AnalyticsService.trackFeedbackSubmitted(
-      hasEmail: _emailController.text.trim().isNotEmpty,
+    final email = _emailController.text.trim();
+    final sent = await _backend.submitFeedback(
+      message: _feedbackController.text.trim(),
+      email: email,
+      platform: kIsWeb ? 'web' : defaultTargetPlatform.name,
     );
     
-    // For MVP: just log and show success
-    debugPrint('[Feedback] Message: ${_feedbackController.text}');
-    if (_emailController.text.isNotEmpty) {
-      debugPrint('[Feedback] Email: ${_emailController.text}');
+    if (sent) {
+      AnalyticsService.trackFeedbackSubmitted(hasEmail: email.isNotEmpty);
     }
     
-    if (mounted) {
-      setState(() {
-        _isSubmitting = false;
-        _isSubmitted = true;
-      });
+    if (!mounted) return;
+    setState(() {
+      _isSubmitting = false;
+      _isSubmitted = sent;
+    });
+    
+    if (!sent) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text(
+            "Couldn't send your feedback. Check your connection and try again.",
+          ),
+          action: SnackBarAction(label: 'Retry', onPressed: _submitFeedback),
+        ),
+      );
     }
   }
 
@@ -130,11 +140,10 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
               keyboardType: TextInputType.emailAddress,
               autocorrect: false,
               validator: (value) {
-                if (value == null || value.isEmpty) {
+                if (value == null || value.trim().isEmpty) {
                   return null; // Optional field
                 }
-                // Basic email validation
-                if (!value.contains('@') || !value.contains('.')) {
+                if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(value.trim())) {
                   return 'Please enter a valid email';
                 }
                 return null;

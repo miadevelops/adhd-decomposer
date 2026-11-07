@@ -64,7 +64,9 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
   Widget _buildAllCategories() {
     return ListView(
       padding: const EdgeInsets.symmetric(horizontal: 16),
-      children: TaskTemplates.categories.map((category) {
+      children: TaskTemplates.categories
+          .where((category) => TaskTemplates.byCategory(category).isNotEmpty)
+          .map((category) {
         final templates = TaskTemplates.byCategory(category);
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -125,11 +127,32 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
             ],
           ),
         ),
-        ...templates.map((template) => _TemplateCard(
-          template: template,
-          onTap: () => _startTemplate(template),
-          showDescription: true,
-        )),
+        if (templates.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 48),
+            child: Column(
+              children: [
+                const Text('📭', style: TextStyle(fontSize: 40)),
+                const SizedBox(height: 12),
+                Text(
+                  'No templates in this category yet',
+                  style: Theme.of(context).textTheme.titleMedium,
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 12),
+                TextButton(
+                  onPressed: () => setState(() => _selectedCategory = null),
+                  child: const Text('Show all templates'),
+                ),
+              ],
+            ),
+          )
+        else
+          ...templates.map((template) => _TemplateCard(
+            template: template,
+            onTap: () => _startTemplate(template),
+            showDescription: true,
+          )),
       ],
     );
   }
@@ -201,11 +224,13 @@ class _CategoryChip extends StatelessWidget {
       label: '$label category',
       button: true,
       selected: isSelected,
-      child: ExcludeSemantics(
-        child: GestureDetector(
-          onTap: onTap,
+      child: GestureDetector(
+        onTap: onTap,
+        child: ExcludeSemantics(
           child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
+        constraints: const BoxConstraints(minHeight: kMinInteractiveDimension),
+        alignment: Alignment.center,
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         decoration: BoxDecoration(
           color: isSelected
@@ -215,7 +240,7 @@ class _CategoryChip extends StatelessWidget {
           border: Border.all(
             color: isSelected
                 ? Theme.of(context).colorScheme.primary
-                : Theme.of(context).colorScheme.outline.withOpacity(0.3),
+                : Theme.of(context).colorScheme.outline.withValues(alpha: 0.3),
             width: 1.5,
           ),
         ),
@@ -228,8 +253,8 @@ class _CategoryChip extends StatelessWidget {
               label,
               style: TextStyle(
                 color: isSelected
-                    ? Colors.white
-                    : Theme.of(context).textTheme.bodyLarge?.color,
+                    ? Theme.of(context).colorScheme.onPrimary
+                    : Theme.of(context).colorScheme.onSurface,
                 fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
               ),
             ),
@@ -258,6 +283,7 @@ class _TemplateCard extends StatelessWidget {
     return Semantics(
       label: '${template.title}. ${template.totalMinutes} minutes. ${template.steps.length} steps',
       button: true,
+      onTap: onTap,
       child: ExcludeSemantics(
         child: Card(
           margin: const EdgeInsets.only(bottom: 12),
@@ -272,7 +298,7 @@ class _TemplateCard extends StatelessWidget {
                 width: 48,
                 height: 48,
                 decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
+                  color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Center(
@@ -374,7 +400,7 @@ class _TemplatePreviewSheet extends StatelessWidget {
               width: 40,
               height: 4,
               decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.outline.withOpacity(0.3),
+                color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.3),
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -387,7 +413,7 @@ class _TemplatePreviewSheet extends StatelessWidget {
                     width: 56,
                     height: 56,
                     decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
+                      color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(16),
                     ),
                     child: Center(
@@ -468,7 +494,7 @@ class _TemplatePreviewSheet extends StatelessWidget {
                           width: 32,
                           height: 32,
                           decoration: BoxDecoration(
-                            color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
+                            color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Center(

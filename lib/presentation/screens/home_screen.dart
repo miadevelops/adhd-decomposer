@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/task_provider.dart';
 import '../../core/constants/strings.dart';
+import '../../data/models/routine.dart';
 import '../../data/models/task.dart';
 import '../../data/services/routine_service.dart';
 import '../../data/services/settings_service.dart';
@@ -12,9 +13,7 @@ import 'settings_screen.dart';
 import 'stats_screen.dart';
 import 'templates_screen.dart';
 import 'routines_screen.dart';
-
-/// Minimum touch target size for accessibility (48x48dp per WCAG guidelines)
-const double kMinTouchTarget = 48.0;
+import '../../core/theme/app_theme.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -77,13 +76,13 @@ class HomeScreen extends StatelessWidget {
                       color: Theme.of(context)
                           .colorScheme
                           .primary
-                          .withOpacity(0.1),
+                          .withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(20),
                       border: Border.all(
                         color: Theme.of(context)
                             .colorScheme
                             .primary
-                            .withOpacity(0.3),
+                            .withValues(alpha: 0.3),
                       ),
                     ),
                     child: Row(
@@ -107,7 +106,7 @@ class HomeScreen extends StatelessWidget {
                             backgroundColor: Theme.of(context)
                                 .colorScheme
                                 .primary
-                                .withOpacity(0.2),
+                                .withValues(alpha: 0.2),
                             valueColor: AlwaysStoppedAnimation<Color>(
                               Theme.of(context).colorScheme.primary,
                             ),
@@ -120,33 +119,23 @@ class HomeScreen extends StatelessWidget {
               );
             },
           ),
-          Semantics(
-            label: 'View routines',
-            button: true,
-            excludeSemantics: true,
-            child: IconButton(
-              icon: const Icon(Icons.repeat_rounded),
-              tooltip: 'Routines',
-              onPressed: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const RoutinesScreen()),
-                );
-              },
-            ),
+          IconButton(
+            icon: const Icon(Icons.repeat_rounded),
+            tooltip: 'Routines',
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const RoutinesScreen()),
+              );
+            },
           ),
-          Semantics(
-            label: 'Open settings',
-            button: true,
-            excludeSemantics: true,
-            child: IconButton(
-              icon: const Icon(Icons.settings_outlined),
-              tooltip: 'Settings',
-              onPressed: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const SettingsScreen()),
-                );
-              },
-            ),
+          IconButton(
+            icon: const Icon(Icons.settings_outlined),
+            tooltip: 'Settings',
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const SettingsScreen()),
+              );
+            },
           ),
         ],
       ),
@@ -158,34 +147,24 @@ class HomeScreen extends StatelessWidget {
       floatingActionButton: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Semantics(
-            label: 'Browse task templates',
-            button: true,
-            excludeSemantics: true,
-            child: SizedBox(
-              height: kMinTouchTarget,
-              child: FloatingActionButton.extended(
-                heroTag: 'templates',
-                onPressed: () => _navigateToTemplates(context),
-                icon: const Icon(Icons.library_books_outlined),
-                label: const Text('Templates'),
-                backgroundColor: Theme.of(context).colorScheme.secondary,
-              ),
+          SizedBox(
+            height: kMinTouchTarget,
+            child: FloatingActionButton.extended(
+              heroTag: 'templates',
+              onPressed: () => _navigateToTemplates(context),
+              icon: const Icon(Icons.library_books_outlined),
+              label: const Text('Templates'),
+              backgroundColor: Theme.of(context).colorScheme.secondary,
             ),
           ),
           const SizedBox(width: 12),
-          Semantics(
-            label: 'Create a new task',
-            button: true,
-            excludeSemantics: true,
-            child: SizedBox(
-              height: kMinTouchTarget,
-              child: FloatingActionButton.extended(
-                heroTag: 'new_task',
-                onPressed: () => _navigateToDecompose(context),
-                icon: const Icon(Icons.add),
-                label: const Text(AppStrings.newTask),
-              ),
+          SizedBox(
+            height: kMinTouchTarget,
+            child: FloatingActionButton.extended(
+              heroTag: 'new_task',
+              onPressed: () => _navigateToDecompose(context),
+              icon: const Icon(Icons.add),
+              label: const Text(AppStrings.newTask),
             ),
           ),
         ],
@@ -229,7 +208,7 @@ class HomeScreen extends StatelessWidget {
                     Icons.checklist_outlined,
                     size: 80,
                     color:
-                        Theme.of(context).colorScheme.primary.withOpacity(0.5),
+                        Theme.of(context).colorScheme.primary.withValues(alpha: 0.5),
                     semanticLabel: 'Empty checklist',
                   ),
                   const SizedBox(height: 24),
@@ -302,7 +281,7 @@ class HomeScreen extends StatelessWidget {
           ...activeTasks.map((task) => _TaskCard(
                 task: task,
                 onTap: () => _startTask(context, task),
-                onDelete: () => provider.deleteTask(task.id),
+                onDelete: () => _deleteWithUndo(context, provider, task),
               )),
         ],
 
@@ -348,12 +327,27 @@ class HomeScreen extends StatelessWidget {
                   child: _TaskCard(
                     task: task,
                     onTap: null,
-                    onDelete: () => provider.deleteTask(task.id),
+                    onDelete: () => _deleteWithUndo(context, provider, task),
                     isCompleted: true,
                   ),
                 )),
         ],
       ],
+    );
+  }
+
+  void _deleteWithUndo(BuildContext context, TaskProvider provider, Task task) {
+    final undo = provider.deleteTask(task.id);
+    if (undo == null) return;
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text('Deleted "${task.title}"'),
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 5),
+        action: SnackBarAction(label: 'Undo', onPressed: undo),
+      ),
     );
   }
 
@@ -447,16 +441,16 @@ class _RoutinesDueTodaySection extends StatelessWidget {
               header: true,
               child: Row(
                 children: [
-                  const Icon(
+                  Icon(
                     Icons.today,
                     size: 20,
-                    color: Colors.orange,
+                    color: StatusColors.of(context).warning,
                   ),
                   const SizedBox(width: 8),
                   Text(
                     'Routines Due Today',
                     style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          color: Colors.orange,
+                          color: StatusColors.of(context).warning,
                         ),
                   ),
                 ],
@@ -491,26 +485,13 @@ class _RoutinesDueTodaySection extends StatelessWidget {
     );
   }
 
-  void _startRoutine(BuildContext context, routine) {
-    final task = routine.toTask();
-    context.read<TaskProvider>().addTask(task);
-    context.read<TaskProvider>().setActiveTask(task);
-
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => ExecuteScreen(
-          onTaskComplete: () {
-            context.read<RoutineService>().markRoutineComplete(routine.id);
-          },
-        ),
-      ),
-    );
-  }
+  void _startRoutine(BuildContext context, Routine routine) =>
+      startRoutineFlow(context, routine);
 }
 
 /// Card for a routine that's due today
 class _RoutineDueCard extends StatelessWidget {
-  final dynamic routine;
+  final Routine routine;
   final VoidCallback onStart;
 
   const _RoutineDueCard({
@@ -522,7 +503,7 @@ class _RoutineDueCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
-      color: Theme.of(context).colorScheme.secondaryContainer.withOpacity(0.5),
+      color: Theme.of(context).colorScheme.secondaryContainer.withValues(alpha: 0.5),
       child: InkWell(
         onTap: onStart,
         borderRadius: BorderRadius.circular(16),
@@ -533,7 +514,7 @@ class _RoutineDueCard extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
+                  color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Icon(
@@ -614,11 +595,11 @@ class _RoutinesQuickAccess extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
+                  color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Icon(
-                  Icons.check_circle,
+                  completedToday > 0 ? Icons.check_circle : Icons.event_available,
                   color: Theme.of(context).colorScheme.primary,
                 ),
               ),
@@ -628,11 +609,15 @@ class _RoutinesQuickAccess extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'All routines done!',
+                      completedToday > 0
+                          ? 'Routines done for today!'
+                          : 'No routines due today',
                       style: Theme.of(context).textTheme.titleMedium,
                     ),
                     Text(
-                      '$completedToday of $totalRoutines completed today',
+                      completedToday > 0
+                          ? '$completedToday of $totalRoutines completed today'
+                          : 'Tap to see all $totalRoutines routines',
                       style: Theme.of(context).textTheme.bodyMedium,
                     ),
                   ],
@@ -717,13 +702,13 @@ class _TaskCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isCompleted = task.isCompleted;
+    final isCompleted = this.isCompleted || task.isCompleted;
     final progressPercent = (task.progress * 100).round();
 
     // Build semantic label for screen readers
     final semanticLabel = isCompleted
         ? 'Completed task: ${task.title}. ${task.completedStepsCount} steps done.'
-        : 'Task: ${task.title}. ${task.completedStepsCount} of ${task.steps.length} steps completed. Estimated ${task.totalEstimatedMinutes} minutes. ${progressPercent > 0 ? '$progressPercent percent complete.' : ''} Double tap to continue.';
+        : 'Task: ${task.title}. ${task.completedStepsCount} of ${task.steps.length} steps completed. Estimated ${task.totalEstimatedMinutes} minutes. ${progressPercent > 0 ? '$progressPercent percent complete.' : ''}';
 
     return Semantics(
       label: semanticLabel,
@@ -767,9 +752,8 @@ class _TaskCard extends StatelessWidget {
                           color: Theme.of(context).colorScheme.primary,
                           semanticLabel: 'Completed',
                         ),
-                      )
-                    else
-                      Semantics(
+                      ),
+                    Semantics(
                         label: 'Delete task ${task.title}',
                         button: true,
                         child: SizedBox(
@@ -821,7 +805,7 @@ class _TaskCard extends StatelessWidget {
                       backgroundColor: Theme.of(context)
                           .colorScheme
                           .primary
-                          .withOpacity(0.2),
+                          .withValues(alpha: 0.2),
                     ),
                   ),
                 ],

@@ -4,9 +4,7 @@ import 'package:flutter/rendering.dart';
 import 'package:intl/intl.dart';
 import '../../data/services/calendar_service.dart';
 import '../../data/models/task.dart';
-
-/// Minimum touch target size for accessibility (48x48dp per WCAG guidelines)
-const double kMinTouchTarget = 48.0;
+import '../../core/theme/app_theme.dart';
 
 /// Bottom sheet for picking a time slot to block for a task
 class TimeSlotPicker extends StatefulWidget {
@@ -43,19 +41,26 @@ class _TimeSlotPickerState extends State<TimeSlotPicker> {
   Future<void> _loadSuggestedSlots() async {
     final now = DateTime.now();
     final duration = Duration(minutes: widget.task.totalEstimatedMinutes);
-    final endOfTomorrow = DateTime(
+    // Search through 9 PM the day after tomorrow.
+    final searchEnd = DateTime(
       now.year,
       now.month,
       now.day + 2,
-      21, // 9 PM
+      21,
     );
 
-    final slots = await widget.calendarService.findFreeSlots(
-      duration,
-      now,
-      endOfTomorrow,
-      maxResults: 3,
-    );
+    List<TimeSlot> slots;
+    try {
+      slots = await widget.calendarService.findFreeSlots(
+        duration,
+        now,
+        searchEnd,
+        maxResults: 3,
+      );
+    } catch (e) {
+      debugPrint('TimeSlotPicker: failed to load free slots: $e');
+      slots = const [];
+    }
 
     if (mounted) {
       setState(() {
@@ -76,7 +81,8 @@ class _TimeSlotPickerState extends State<TimeSlotPicker> {
         color: Theme.of(context).colorScheme.surface,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      child: Column(
+      child: SingleChildScrollView(
+        child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -86,7 +92,7 @@ class _TimeSlotPickerState extends State<TimeSlotPicker> {
               width: 40,
               height: 4,
               decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.outline.withOpacity(0.3),
+                color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.3),
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -172,6 +178,7 @@ class _TimeSlotPickerState extends State<TimeSlotPicker> {
           SizedBox(height: MediaQuery.of(context).padding.bottom),
         ],
       ),
+      ),
     );
   }
 
@@ -233,12 +240,12 @@ class _TimeSlotPickerState extends State<TimeSlotPicker> {
             constraints: const BoxConstraints(minHeight: kMinTouchTarget),
             decoration: BoxDecoration(
               color: isSelected
-                  ? Theme.of(context).colorScheme.primary.withOpacity(0.1)
+                  ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.1)
                   : Colors.transparent,
               border: Border.all(
                 color: isSelected
                     ? Theme.of(context).colorScheme.primary
-                    : Theme.of(context).colorScheme.outline.withOpacity(0.3),
+                    : Theme.of(context).colorScheme.outline.withValues(alpha: 0.3),
                 width: isSelected ? 2 : 1,
               ),
               borderRadius: BorderRadius.circular(12),
@@ -249,7 +256,7 @@ class _TimeSlotPickerState extends State<TimeSlotPicker> {
                   Icons.schedule,
                   color: isSelected
                       ? Theme.of(context).colorScheme.primary
-                      : Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                      : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -300,12 +307,12 @@ class _TimeSlotPickerState extends State<TimeSlotPicker> {
               constraints: const BoxConstraints(minHeight: kMinTouchTarget),
               decoration: BoxDecoration(
                 color: _useCustomTime
-                    ? Theme.of(context).colorScheme.primary.withOpacity(0.1)
+                    ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.1)
                     : Colors.transparent,
                 border: Border.all(
                   color: _useCustomTime
                       ? Theme.of(context).colorScheme.primary
-                      : Theme.of(context).colorScheme.outline.withOpacity(0.3),
+                      : Theme.of(context).colorScheme.outline.withValues(alpha: 0.3),
                   width: _useCustomTime ? 2 : 1,
                 ),
                 borderRadius: BorderRadius.circular(12),
@@ -319,7 +326,7 @@ class _TimeSlotPickerState extends State<TimeSlotPicker> {
                         : Theme.of(context)
                             .colorScheme
                             .onSurface
-                            .withOpacity(0.6),
+                            .withValues(alpha: 0.6),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
@@ -336,7 +343,7 @@ class _TimeSlotPickerState extends State<TimeSlotPicker> {
                                 : Theme.of(context)
                                     .colorScheme
                                     .onSurface
-                                    .withOpacity(0.6),
+                                    .withValues(alpha: 0.6),
                           ),
                     ),
                   ),
@@ -366,7 +373,7 @@ class _TimeSlotPickerState extends State<TimeSlotPicker> {
       helpText: 'Pick a date for your task',
     );
 
-    if (date == null || !mounted) return;
+    if (date == null || !context.mounted) return;
 
     // Pick time
     final time = await showTimePicker(
@@ -375,7 +382,7 @@ class _TimeSlotPickerState extends State<TimeSlotPicker> {
       helpText: 'Pick a start time',
     );
 
-    if (time == null || !mounted) return;
+    if (time == null || !context.mounted) return;
 
     final selectedDateTime = DateTime(
       date.year,
@@ -384,6 +391,13 @@ class _TimeSlotPickerState extends State<TimeSlotPicker> {
       time.hour,
       time.minute,
     );
+
+    if (selectedDateTime.isBefore(DateTime.now())) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('That time has already passed. Pick a later time.')),
+      );
+      return;
+    }
 
     setState(() {
       _customDateTime = selectedDateTime;

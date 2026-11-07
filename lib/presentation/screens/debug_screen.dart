@@ -59,12 +59,13 @@ class _DebugScreenState extends State<DebugScreen> {
             subtitle: 'Sets onboardingComplete = false and opens onboarding',
             onTap: () {
               settings.onboardingComplete = false;
-              Navigator.of(context).pushAndRemoveUntil(
+              // This screen is removed from the stack below, so capture the
+              // navigator now instead of using this context later.
+              final navigator = Navigator.of(context);
+              navigator.pushAndRemoveUntil(
                 MaterialPageRoute(
                   builder: (_) => OnboardingScreen(
-                    onComplete: () {
-                      Navigator.of(context).pop();
-                    },
+                    onComplete: () => navigator.pop(),
                   ),
                 ),
                 (route) => route.isFirst,
@@ -76,10 +77,17 @@ class _DebugScreenState extends State<DebugScreen> {
             label: 'Preview onboarding (no reset)',
             subtitle: 'Shows onboarding without changing state',
             onTap: () {
-              Navigator.of(context).push(
+              final navigator = Navigator.of(context);
+              final wasComplete = settings.onboardingComplete;
+              navigator.push(
                 MaterialPageRoute(
                   builder: (_) => OnboardingScreen(
-                    onComplete: () => Navigator.of(context).pop(),
+                    onComplete: () {
+                      // OnboardingScreen marks itself complete; restore the
+                      // previous value so this stays a preview.
+                      settings.onboardingComplete = wasComplete;
+                      navigator.pop();
+                    },
                   ),
                 ),
               );
@@ -227,7 +235,10 @@ class _DebugScreenState extends State<DebugScreen> {
             icon: Icons.local_fire_department,
             label: 'Set streak to 7',
             onTap: () {
+              final now = DateTime.now();
               stats.currentStreak = 7;
+              stats.lastCompletionDate =
+                  '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
               setState(() {});
               _snack(context, 'Streak set to 7');
             },
@@ -317,12 +328,15 @@ class _DebugScreenState extends State<DebugScreen> {
           _actionTile(
             icon: Icons.warning_amber,
             label: 'Full factory reset',
-            subtitle: 'Clears ALL Hive boxes — kills everything',
+            subtitle: 'Clears tasks, core stats, premium flag & onboarding state',
             color: Colors.red,
             onTap: () => _confirmAction(
               context,
               title: 'Factory reset?',
-              message: 'This will erase ALL app data. You will see onboarding again on next launch.',
+              message: 'This clears tasks, task/step counts, current streak, premium flag, '
+                  'decomposition count, name, rating state and onboarding. Routines, XP, '
+                  'achievements and other preferences are kept. You will see onboarding '
+                  'again on next launch.',
               onConfirm: () async {
                 settings.onboardingComplete = false;
                 settings.isPremium = false;

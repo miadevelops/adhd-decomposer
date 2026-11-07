@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math';
+import 'package:clock/clock.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -9,6 +10,7 @@ import '../../data/services/ambient_audio_service.dart';
 import '../../data/services/sound_service.dart';
 import '../../data/services/purchase_service.dart';
 import 'paywall_screen.dart';
+import '../../core/theme/motion.dart';
 
 /// Body Double Mode - Digital presence for focus and accountability
 /// 
@@ -34,6 +36,8 @@ class _BodyDoubleScreenState extends State<BodyDoubleScreen>
   int _secondsRemaining = 25 * 60; // 25 minutes default
   bool _isWorkSession = true;
   bool _timerRunning = false;
+  // Wall-clock end time so the countdown stays accurate in the background.
+  DateTime? _timerEndsAt;
   bool _showBreakPrompt = false;
   
   // Session tracking
@@ -117,6 +121,20 @@ class _BodyDoubleScreenState extends State<BodyDoubleScreen>
   void didChangeDependencies() {
     super.didChangeDependencies();
     _taskProvider ??= context.read<TaskProvider>();
+    _syncMotion();
+  }
+
+  /// Stops the ambient animations entirely (not just hides them) when the
+  /// user or OS asks for reduced motion, so they don't tick every frame.
+  void _syncMotion() {
+    final reduce = shouldReduceMotion(context);
+    if (reduce) {
+      _pulseController.stop();
+      _particleController.stop();
+    } else {
+      if (!_pulseController.isAnimating) _pulseController.repeat(reverse: true);
+      if (!_particleController.isAnimating) _particleController.repeat();
+    }
   }
 
   @override
@@ -216,6 +234,34 @@ class _BodyDoubleScreenState extends State<BodyDoubleScreen>
     }
   }
 
+  /// Swipe-down and back gestures are easy to trigger by accident, so ask
+  /// first while a focus timer is running.
+  Future<void> _requestExit() async {
+    if (_isExiting) return;
+    if (_timerRunning && _isWorkSession) {
+      final leave = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Leave focus session?'),
+          content: const Text(
+              "Your timer is still running. This session won't count if you leave now."),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Keep going'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('Leave'),
+            ),
+          ],
+        ),
+      );
+      if (leave != true || !mounted) return;
+    }
+    await _exitScreen();
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -241,13 +287,13 @@ class _BodyDoubleScreenState extends State<BodyDoubleScreen>
         final isFastSwipe = (details.primaryVelocity ?? 0) > 300;
         final isLongDrag = _verticalDragDistance > 80;
         if (isFastSwipe || isLongDrag) {
-          _exitScreen();
+          _requestExit();
         }
       },
-      child: WillPopScope(
-        onWillPop: () async {
-          await _ambientAudio.stop();
-          return true;
+      child: PopScope(
+        canPop: false,
+        onPopInvokedWithResult: (didPop, _) {
+          if (!didPop) _requestExit();
         },
         child: Scaffold(
         backgroundColor: backgroundColor,
@@ -284,7 +330,11 @@ class _BodyDoubleScreenState extends State<BodyDoubleScreen>
                         AnimatedOpacity(
                           opacity: _showControls ? 1.0 : 0.0,
                           duration: const Duration(milliseconds: 200),
-                          child: _buildHeader(context),
+                          // Hidden buttons shouldn't be tappable by accident.
+                          child: IgnorePointer(
+                            ignoring: !_showControls,
+                            child: _buildHeader(context),
+                          ),
                         ),
 
                         SizedBox(height: isVeryCompact ? 2 : (isCompact ? 6 : 24)),
@@ -373,7 +423,7 @@ class _BodyDoubleScreenState extends State<BodyDoubleScreen>
               //       child: Text(
               //         'Swipe down to exit',
               //         style: TextStyle(
-              //           color: Colors.white.withOpacity(0.3),
+              //           color: Colors.white.withValues(alpha: 0.3),
               //           fontSize: 12,
               //         ),
               //       ),
@@ -416,7 +466,7 @@ class _BodyDoubleScreenState extends State<BodyDoubleScreen>
               Icon(
                 Icons.timer_outlined,
                 size: 16,
-                color: Colors.white.withOpacity(0.5),
+                color: Colors.white.withValues(alpha: 0.5),
               ),
               const SizedBox(width: 4),
               Text(
@@ -424,7 +474,7 @@ class _BodyDoubleScreenState extends State<BodyDoubleScreen>
                     ? '${hours}h ${minutes}m' 
                     : '${minutes}m',
                 style: TextStyle(
-                  color: Colors.white.withOpacity(0.5),
+                  color: Colors.white.withValues(alpha: 0.75),
                   fontSize: 12,
                 ),
               ),
@@ -436,6 +486,7 @@ class _BodyDoubleScreenState extends State<BodyDoubleScreen>
         if (_completedPomodoros > 0)
           Semantics(
             label: '$_completedPomodoros focus sessions completed',
+            excludeSemantics: true,
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -468,7 +519,7 @@ class _BodyDoubleScreenState extends State<BodyDoubleScreen>
     double innerSize = 80,
   }) {
     const baseColor = Color(0xFF6366f1);
-    final reduceAnimations = context.read<TaskProvider>().reduceAnimations;
+    final reduceAnimations = shouldReduceMotion(context);
     
     return SizedBox(
       width: outerSize,
@@ -482,6 +533,7 @@ class _BodyDoubleScreenState extends State<BodyDoubleScreen>
 
           return Semantics(
             label: 'Digital companion presence indicator',
+            excludeSemantics: true,
             child: Transform.scale(
               scale: scale,
               child: Container(
@@ -489,10 +541,10 @@ class _BodyDoubleScreenState extends State<BodyDoubleScreen>
                 height: outerSize,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: baseColor.withOpacity(0.15),
+                  color: baseColor.withValues(alpha: 0.15),
                   boxShadow: [
                     BoxShadow(
-                      color: baseColor.withOpacity(glowOpacity),
+                      color: baseColor.withValues(alpha: glowOpacity),
                       blurRadius: 40,
                       spreadRadius: 10,
                     ),
@@ -506,15 +558,15 @@ class _BodyDoubleScreenState extends State<BodyDoubleScreen>
                       shape: BoxShape.circle,
                       gradient: RadialGradient(
                         colors: [
-                          baseColor.withOpacity(0.8),
-                          baseColor.withOpacity(0.4),
+                          baseColor.withValues(alpha: 0.8),
+                          baseColor.withValues(alpha: 0.4),
                         ],
                       ),
                     ),
                     child: Icon(
                       Icons.favorite,
                       size: 32,
-                      color: Colors.white.withOpacity(0.9),
+                      color: Colors.white.withValues(alpha: 0.9),
                     ),
                   ),
                 ),
@@ -531,15 +583,14 @@ class _BodyDoubleScreenState extends State<BodyDoubleScreen>
     double fontSize = 18,
     double height = 60,
   }) {
-    final provider = context.read<TaskProvider>();
-    final reduceAnimations = provider.reduceAnimations;
+    final reduceAnimations = shouldReduceMotion(context);
     
     final message = Text(
       _encouragements[_currentMessageIndex],
       style: TextStyle(
         fontSize: fontSize,
         fontWeight: FontWeight.w400,
-        color: Colors.white.withOpacity(0.8),
+        color: Colors.white.withValues(alpha: 0.8),
         height: 1.4,
       ),
       textAlign: TextAlign.center,
@@ -548,6 +599,7 @@ class _BodyDoubleScreenState extends State<BodyDoubleScreen>
     return Semantics(
       label: 'Encouragement: ${_encouragements[_currentMessageIndex]}',
       liveRegion: true,
+      excludeSemantics: true,
       child: AnimatedSwitcher(
         duration: Duration(milliseconds: reduceAnimations ? 0 : 500),
         child: SizedBox(
@@ -582,20 +634,20 @@ class _BodyDoubleScreenState extends State<BodyDoubleScreen>
           child: Container(
             padding: padding,
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.1),
+              color: Colors.white.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(16),
               border: Border.all(
-                color: Colors.white.withOpacity(0.1),
+                color: Colors.white.withValues(alpha: 0.1),
               ),
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
+                const Text(
                   'CURRENT FOCUS',
                   style: TextStyle(
-                    color: const Color(0xFF6366f1).withOpacity(0.8),
-                    fontSize: 11,
+                    color: Color(0xFF818cf8),
+                    fontSize: 12,
                     fontWeight: FontWeight.w600,
                     letterSpacing: 1.2,
                   ),
@@ -605,7 +657,7 @@ class _BodyDoubleScreenState extends State<BodyDoubleScreen>
                   child: Text(
                     step.action,
                     style: TextStyle(
-                      color: Colors.white.withOpacity(0.9),
+                      color: Colors.white.withValues(alpha: 0.9),
                       fontSize: bodyFontSize,
                       height: 1.3,
                     ),
@@ -648,8 +700,8 @@ class _BodyDoubleScreenState extends State<BodyDoubleScreen>
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
             decoration: BoxDecoration(
               color: isBreak 
-                  ? Colors.green.withOpacity(0.2) 
-                  : const Color(0xFF6366f1).withOpacity(0.2),
+                  ? Colors.green.withValues(alpha: 0.2) 
+                  : const Color(0xFF6366f1).withValues(alpha: 0.2),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Text(
@@ -676,7 +728,7 @@ class _BodyDoubleScreenState extends State<BodyDoubleScreen>
                 child: CircularProgressIndicator(
                   value: progress,
                   strokeWidth: compact ? 3 : 4,
-                  backgroundColor: Colors.white.withOpacity(0.1),
+                  backgroundColor: Colors.white.withValues(alpha: 0.1),
                   valueColor: AlwaysStoppedAnimation<Color>(
                     isBreak ? Colors.green.shade400 : const Color(0xFF6366f1),
                   ),
@@ -689,7 +741,7 @@ class _BodyDoubleScreenState extends State<BodyDoubleScreen>
                   fontSize: timeFontSize,
                   fontWeight: FontWeight.w200,
                   letterSpacing: 4,
-                  color: Colors.white.withOpacity(0.9),
+                  color: Colors.white.withValues(alpha: 0.9),
                 ),
               ),
             ],
@@ -710,7 +762,7 @@ class _BodyDoubleScreenState extends State<BodyDoubleScreen>
                   label: 'Reset timer',
                   button: true,
                   child: IconButton(
-                    icon: Icon(Icons.refresh, color: Colors.white.withOpacity(0.6)),
+                    icon: Icon(Icons.refresh, color: Colors.white.withValues(alpha: 0.6)),
                     onPressed: _resetTimer,
                     tooltip: 'Reset',
                   ),
@@ -746,7 +798,7 @@ class _BodyDoubleScreenState extends State<BodyDoubleScreen>
                   label: _isWorkSession ? 'Skip to break' : 'Skip to work session',
                   button: true,
                   child: IconButton(
-                    icon: Icon(Icons.skip_next, color: Colors.white.withOpacity(0.6)),
+                    icon: Icon(Icons.skip_next, color: Colors.white.withValues(alpha: 0.6)),
                     onPressed: _skipSession,
                     tooltip: _isWorkSession ? 'Take break' : 'Back to work',
                   ),
@@ -770,7 +822,7 @@ class _BodyDoubleScreenState extends State<BodyDoubleScreen>
     return Container(
       padding: EdgeInsets.all(compact ? 12 : 16),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.05),
+        color: Colors.white.withValues(alpha: 0.05),
         borderRadius: BorderRadius.circular(16),
       ),
       child: Row(
@@ -780,13 +832,19 @@ class _BodyDoubleScreenState extends State<BodyDoubleScreen>
               final isLocked = sound.isPremium && !isPremium;
               return Expanded(
                 child: Semantics(
-                  label: '${AmbientAudioService.getLabel(sound)} sound${isSelected ? ', selected' : ''}${isLocked ? ', requires Pro' : ''}',
+                  label: '${AmbientAudioService.getLabel(sound)} sound${isLocked ? ', requires Pro' : ''}',
                   button: true,
                   selected: isSelected,
+                  inMutuallyExclusiveGroup: true,
                   child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
                     onTap: () => _selectSound(sound),
+                    child: ExcludeSemantics(
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 200),
+                      constraints: const BoxConstraints(
+                        minHeight: kMinInteractiveDimension,
+                      ),
                       margin: const EdgeInsets.symmetric(horizontal: 4),
                       padding: EdgeInsets.symmetric(
                         horizontal: compact ? 6 : 8,
@@ -794,7 +852,7 @@ class _BodyDoubleScreenState extends State<BodyDoubleScreen>
                       ),
                       decoration: BoxDecoration(
                         color: isSelected 
-                            ? const Color(0xFF6366f1).withOpacity(0.3)
+                            ? const Color(0xFF6366f1).withValues(alpha: 0.3)
                             : Colors.transparent,
                         borderRadius: BorderRadius.circular(20),
                         border: isSelected 
@@ -813,8 +871,8 @@ class _BodyDoubleScreenState extends State<BodyDoubleScreen>
                                 color: isSelected 
                                     ? const Color(0xFF818cf8)
                                     : isLocked
-                                        ? Colors.white.withOpacity(0.2)
-                                        : Colors.white.withOpacity(0.4),
+                                        ? Colors.white.withValues(alpha: 0.5)
+                                        : Colors.white.withValues(alpha: 0.75),
                               ),
                               if (isLocked)
                                 Positioned(
@@ -823,7 +881,7 @@ class _BodyDoubleScreenState extends State<BodyDoubleScreen>
                                   child: Icon(
                                     Icons.lock,
                                     size: 10,
-                                    color: Colors.amber.withOpacity(0.8),
+                                    color: Colors.amber.withValues(alpha: 0.8),
                                   ),
                                 ),
                             ],
@@ -832,12 +890,12 @@ class _BodyDoubleScreenState extends State<BodyDoubleScreen>
                           Text(
                             AmbientAudioService.getLabel(sound),
                             style: TextStyle(
-                              fontSize: compact ? 9 : 10,
+                              fontSize: compact ? 11 : 12,
                               color: isSelected 
                                   ? const Color(0xFF818cf8)
                                   : isLocked
-                                      ? Colors.white.withOpacity(0.2)
-                                      : Colors.white.withOpacity(0.4),
+                                      ? Colors.white.withValues(alpha: 0.5)
+                                      : Colors.white.withValues(alpha: 0.75),
                             ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
@@ -845,6 +903,7 @@ class _BodyDoubleScreenState extends State<BodyDoubleScreen>
                           ),
                         ],
                       ),
+                    ),
                     ),
                   ),
                 ),
@@ -855,29 +914,25 @@ class _BodyDoubleScreenState extends State<BodyDoubleScreen>
   }
 
   Widget _buildParticles(BuildContext context) {
-    final provider = context.read<TaskProvider>();
-    if (provider.reduceAnimations) {
+    if (shouldReduceMotion(context)) {
       return const SizedBox.shrink();
     }
     
-    return AnimatedBuilder(
-      animation: _particleController,
-      builder: (context, child) {
-        return CustomPaint(
-          painter: _ParticlePainter(
-            particles: _particles,
-            time: _particleController.value,
-            color: const Color(0xFF6366f1),
-          ),
-          size: Size.infinite,
-        );
-      },
+    return RepaintBoundary(
+      child: CustomPaint(
+        painter: _ParticlePainter(
+          particles: _particles,
+          animation: _particleController,
+          color: const Color(0xFF6366f1),
+        ),
+        size: Size.infinite,
+      ),
     );
   }
 
   Widget _buildBreakPrompt(BuildContext context) {
     return Container(
-      color: Colors.black.withOpacity(0.7),
+      color: Colors.black.withValues(alpha: 0.7),
       child: Center(
         child: Semantics(
           label: 'Break time! Would you like to continue with another focus session?',
@@ -912,7 +967,7 @@ class _BodyDoubleScreenState extends State<BodyDoubleScreen>
                       ? 'You earned it. Take 5 minutes.' 
                       : 'One more pomodoro?',
                   style: TextStyle(
-                    color: Colors.white.withOpacity(0.7),
+                    color: Colors.white.withValues(alpha: 0.7),
                     fontSize: 14,
                   ),
                   textAlign: TextAlign.center,
@@ -931,7 +986,7 @@ class _BodyDoubleScreenState extends State<BodyDoubleScreen>
                         },
                         style: OutlinedButton.styleFrom(
                           foregroundColor: Colors.white70,
-                          side: BorderSide(color: Colors.white.withOpacity(0.3)),
+                          side: BorderSide(color: Colors.white.withValues(alpha: 0.3)),
                         ),
                         child: const Text("I'm done"),
                       ),
@@ -943,12 +998,6 @@ class _BodyDoubleScreenState extends State<BodyDoubleScreen>
                         onPressed: () {
                           setState(() {
                             _showBreakPrompt = false;
-                            if (!_isWorkSession) {
-                              _completedPomodoros++;
-                              // Record pomodoro in stats
-                              final provider = context.read<TaskProvider>();
-                              provider.recordPomodoroCompleted();
-                            }
                             _isWorkSession = !_isWorkSession;
                             _secondsRemaining = _isWorkSession ? 25 * 60 : 5 * 60;
                             _timerRunning = true;
@@ -991,33 +1040,53 @@ class _BodyDoubleScreenState extends State<BodyDoubleScreen>
   }
 
   void _toggleTimer() {
-    setState(() {
-      _timerRunning = !_timerRunning;
-    });
-    
     if (_timerRunning) {
-      _startTimerTick();
-    } else {
+      _onTimerTick();
+      if (!_timerRunning) return; // Finished while catching up.
       _timer?.cancel();
+      setState(() {
+        _timerRunning = false;
+        _timerEndsAt = null;
+      });
+    } else {
+      setState(() {
+        _timerRunning = true;
+      });
+      _startTimerTick();
     }
   }
 
   void _startTimerTick() {
     _timer?.cancel();
-    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (_secondsRemaining > 0 && _timerRunning) {
-        setState(() {
-          _secondsRemaining--;
-        });
-      } else if (_secondsRemaining == 0) {
-        timer.cancel();
-        _timerRunning = false;
-        HapticFeedback.mediumImpact();
-        // Play gentle chime
-        _soundService.playTimerEnd();
-        setState(() {
-          _showBreakPrompt = true;
-        });
+    _timerEndsAt = clock.now().add(Duration(seconds: _secondsRemaining));
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) => _onTimerTick());
+  }
+
+  void _onTimerTick() {
+    if (!mounted || !_timerRunning || _timerEndsAt == null) return;
+
+    final remainingMs = _timerEndsAt!.difference(clock.now()).inMilliseconds;
+    final remaining = remainingMs <= 0 ? 0 : (remainingMs / 1000).ceil();
+    if (remaining > 0) {
+      if (remaining != _secondsRemaining) {
+        setState(() => _secondsRemaining = remaining);
+      }
+      return;
+    }
+
+    _timer?.cancel();
+    HapticFeedback.mediumImpact();
+    // Play gentle chime
+    _soundService.playTimerEnd();
+    setState(() {
+      _secondsRemaining = 0;
+      _timerRunning = false;
+      _timerEndsAt = null;
+      _showBreakPrompt = true;
+      // A pomodoro counts once its focus period actually runs out.
+      if (_isWorkSession) {
+        _completedPomodoros++;
+        context.read<TaskProvider>().recordPomodoroCompleted();
       }
     });
   }
@@ -1026,6 +1095,7 @@ class _BodyDoubleScreenState extends State<BodyDoubleScreen>
     _timer?.cancel();
     setState(() {
       _timerRunning = false;
+      _timerEndsAt = null;
       _secondsRemaining = _isWorkSession ? 25 * 60 : 5 * 60;
     });
   }
@@ -1033,14 +1103,11 @@ class _BodyDoubleScreenState extends State<BodyDoubleScreen>
   void _skipSession() {
     _timer?.cancel();
     setState(() {
+      _timerEndsAt = null;
       if (_isWorkSession) {
-        // Skip to break - count as completed pomodoro
+        // Skipping focus time doesn't count as a completed pomodoro.
         _isWorkSession = false;
         _secondsRemaining = 5 * 60;
-        _completedPomodoros++;
-        // Record pomodoro in stats
-        final provider = context.read<TaskProvider>();
-        provider.recordPomodoroCompleted();
       } else {
         // Skip back to work
         _isWorkSession = true;
@@ -1087,17 +1154,19 @@ class _FloatingParticle {
 /// Custom painter for floating particles
 class _ParticlePainter extends CustomPainter {
   final List<_FloatingParticle> particles;
-  final double time;
+  final Animation<double> animation;
   final Color color;
 
+  // Repaints straight from the animation without rebuilding widgets.
   _ParticlePainter({
     required this.particles,
-    required this.time,
+    required this.animation,
     required this.color,
-  });
+  }) : super(repaint: animation);
 
   @override
   void paint(Canvas canvas, Size size) {
+    final time = animation.value;
     for (final particle in particles) {
       // Integer cycle counts make the controller's loop boundary seamless.
       final y = (particle.y - (time * particle.driftCycles)) % 1.0;
@@ -1108,7 +1177,7 @@ class _ParticlePainter extends CustomPainter {
       );
 
       final paint = Paint()
-        ..color = color.withOpacity(particle.opacity * edgeFade)
+        ..color = color.withValues(alpha: particle.opacity * edgeFade)
         ..style = PaintingStyle.fill;
       
       canvas.drawCircle(
@@ -1120,5 +1189,6 @@ class _ParticlePainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _ParticlePainter oldDelegate) => true;
+  bool shouldRepaint(covariant _ParticlePainter oldDelegate) =>
+      oldDelegate.particles != particles || oldDelegate.color != color;
 }

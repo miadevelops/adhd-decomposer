@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math';
+import 'package:clock/clock.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -16,15 +17,14 @@ import '../../data/services/share_service.dart';
 import '../../data/services/stats_service.dart';
 import '../../data/services/settings_service.dart';
 import '../../data/services/analytics_service.dart';
-import '../../data/services/calendar_service.dart';
+import '../../data/services/backend_service.dart' show RateLimitException;
 import '../../data/services/siri_service.dart';
-import '../widgets/time_slot_picker.dart';
 import 'body_double_screen.dart';
 import 'routines_screen.dart';
 import 'paywall_screen.dart';
-
-/// Minimum touch target size for accessibility (48x48dp per WCAG guidelines)
-const double kMinTouchTarget = 48.0;
+import '../../core/theme/motion.dart';
+import '../widgets/scroll_fill.dart';
+import '../../core/theme/app_theme.dart';
 
 class ExecuteScreen extends StatefulWidget {
   /// Optional callback when task is completed (used for routines)
@@ -37,7 +37,7 @@ class ExecuteScreen extends StatefulWidget {
 }
 
 class _ExecuteScreenState extends State<ExecuteScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   late ConfettiController _confettiController;
   final SoundService _soundService = SoundService();
   final GlobalKey _shareCardKey = GlobalKey();
@@ -45,26 +45,33 @@ class _ExecuteScreenState extends State<ExecuteScreen>
   int _secondsRemaining = 0;
   bool _timerRunning = false;
   int? _selectedMinutes;
+  // Timers are driven by the wall clock so they stay accurate when the app
+  // is backgrounded or a periodic tick is delayed.
+  DateTime? _timerEndsAt;
+  int _timerTotalSeconds = 0;
+  // True while Body Double is open on top; its own timer and chimes take over.
+  bool _isCovered = false;
   bool _showCelebration = false;
   String? _celebrationMessage;
   bool _hasTriggeredCompletion = false;
+  String? _completionMessage;
 
   // Time blindness tracking
   Timer? _stepTimer;
+  DateTime _stepStartedAt = clock.now();
   int _stepSecondsElapsed = 0;
   bool _hasShown5MinWarning = false;
   bool _hasShownEstimateWarning = false;
   bool _hasShownDoubleWarning = false;
   String? _timeBlindnessAlert;
-  bool _isAlertSticky = false;
-
-  final _random = Random();
 
   @override
   void initState() {
     super.initState();
     _confettiController =
         ConfettiController(duration: const Duration(seconds: 2));
+
+    WidgetsBinding.instance.addObserver(this);
 
     // Start tracking time on this step
     _startStepTimer();
@@ -77,30 +84,50 @@ class _ExecuteScreenState extends State<ExecuteScreen>
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _confettiController.dispose();
     _timer?.cancel();
     _stepTimer?.cancel();
     super.dispose();
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Periodic timers don't fire while backgrounded; catch up immediately.
+    if (state == AppLifecycleState.resumed) {
+      _onStepTick();
+      _onFocusTimerTick();
+    }
+  }
+
   /// Start tracking elapsed time on current step (for time blindness alerts)
   void _startStepTimer() {
     _stepTimer?.cancel();
+    _stepStartedAt = clock.now();
     _stepSecondsElapsed = 0;
     _hasShown5MinWarning = false;
     _hasShownEstimateWarning = false;
     _hasShownDoubleWarning = false;
     _timeBlindnessAlert = null;
-    _isAlertSticky = false;
 
-    _stepTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (mounted) {
-        setState(() {
-          _stepSecondsElapsed++;
-        });
-        _checkTimeBlindnessAlerts();
-      }
-    });
+    // The elapsed time isn't displayed, so no per-second rebuild is needed.
+    _stepTimer =
+        Timer.periodic(const Duration(seconds: 1), (_) => _onStepTick());
+  }
+
+  void _stopAllTimers() {
+    _stepTimer?.cancel();
+    _stepTimer = null;
+    _timer?.cancel();
+    _timer = null;
+    _timerEndsAt = null;
+    _timerRunning = false;
+  }
+
+  void _onStepTick() {
+    if (!mounted || _stepTimer == null || _isCovered) return;
+    _stepSecondsElapsed = clock.now().difference(_stepStartedAt).inSeconds;
+    _checkTimeBlindnessAlerts();
   }
 
   /// Check and trigger time blindness alerts
@@ -112,14 +139,27 @@ class _ExecuteScreenState extends State<ExecuteScreen>
     final estimatedSeconds = step.estimatedMinutes * 60;
     final elapsedMinutes = _stepSecondsElapsed ~/ 60;
 
-    // Alert 1: Timer has 5 minutes left (only if timer is running)
-    if (_timerRunning && _secondsRemaining == 300 && !_hasShown5MinWarning) {
+    // Alert 1: Timer has 5 minutes left (only if timer is running and was
+    // set for longer than 5 minutes, otherwise it would fire immediately)
+    if (_timerRunning &&
+        _timerTotalSeconds > 300 &&
+        _secondsRemaining > 0 &&
+        _secondsRemaining <= 300 &&
+        !_hasShown5MinWarning) {
       _hasShown5MinWarning = true;
       _showTimeAlert('5 minutes left', sticky: false);
     }
 
+    // Alert 3 supersedes alert 2 if both thresholds were crossed at once
+    // (e.g. returning to the app after a long time away).
+    if (estimatedSeconds > 0 &&
+        _stepSecondsElapsed >= estimatedSeconds * 2 &&
+        !_hasShownDoubleWarning) {
+      _hasShownEstimateWarning = true;
+    }
+
     // Alert 2: You've been on this step longer than estimated
-    if (_stepSecondsElapsed == estimatedSeconds &&
+    if (_stepSecondsElapsed >= estimatedSeconds &&
         estimatedSeconds > 0 &&
         !_hasShownEstimateWarning) {
       _hasShownEstimateWarning = true;
@@ -129,12 +169,12 @@ class _ExecuteScreenState extends State<ExecuteScreen>
     }
 
     // Alert 3: Double the estimated time (gentle check-in) - STICKY
-    if (_stepSecondsElapsed == estimatedSeconds * 2 &&
+    if (_stepSecondsElapsed >= estimatedSeconds * 2 &&
         estimatedSeconds > 0 &&
         !_hasShownDoubleWarning) {
       _hasShownDoubleWarning = true;
       _showTimeAlert(
-          '${elapsedMinutes} min now — stuck? Tap "I\'m stuck" for smaller steps',
+          '$elapsedMinutes min now — stuck? Tap "I\'m stuck" for smaller steps',
           sticky: true);
     }
   }
@@ -158,7 +198,6 @@ class _ExecuteScreenState extends State<ExecuteScreen>
     // Show alert banner
     setState(() {
       _timeBlindnessAlert = message;
-      _isAlertSticky = sticky;
     });
 
     // Announce for screen readers
@@ -170,7 +209,6 @@ class _ExecuteScreenState extends State<ExecuteScreen>
         if (mounted && _timeBlindnessAlert == message) {
           setState(() {
             _timeBlindnessAlert = null;
-            _isAlertSticky = false;
           });
         }
       });
@@ -178,22 +216,28 @@ class _ExecuteScreenState extends State<ExecuteScreen>
   }
 
   /// Check if animations should be reduced based on settings or system preferences
-  bool _shouldReduceAnimations(BuildContext context) {
-    final provider = context.read<TaskProvider>();
-    return provider.reduceAnimations;
-  }
+  bool _shouldReduceAnimations(BuildContext context) =>
+      shouldReduceMotion(context);
 
   /// Check if confetti should be shown
   bool _shouldShowConfetti(BuildContext context) {
     final provider = context.read<TaskProvider>();
-    final reduceAnimations = provider.reduceAnimations;
-    final shouldShow = provider.confettiEnabled && !reduceAnimations;
-    return shouldShow;
+    return provider.confettiEnabled && !shouldReduceMotion(context);
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    final task = context.watch<TaskProvider>().activeTask;
+    final inProgress = task != null && !task.isCompleted;
+
+    // System back / swipe while mid-task goes through the same confirmation
+    // as the close button instead of silently leaving.
+    return PopScope(
+      canPop: !inProgress,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _showExitConfirmation(context);
+      },
+      child: Scaffold(
       body: Stack(
         children: [
           Consumer<TaskProvider>(
@@ -238,6 +282,7 @@ class _ExecuteScreenState extends State<ExecuteScreen>
           if (_timeBlindnessAlert != null) _buildTimeBlindnessAlert(context),
         ],
       ),
+      ),
     );
   }
 
@@ -252,7 +297,7 @@ class _ExecuteScreenState extends State<ExecuteScreen>
         color: Theme.of(context).colorScheme.secondaryContainer,
         child: Semantics(
           liveRegion: true,
-          label: 'Time alert: $_timeBlindnessAlert',
+          container: true,
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             child: Row(
@@ -266,21 +311,22 @@ class _ExecuteScreenState extends State<ExecuteScreen>
                 Expanded(
                   child: Text(
                     _timeBlindnessAlert!,
+                    semanticsLabel: 'Time alert: $_timeBlindnessAlert',
                     style: TextStyle(
                       color: Theme.of(context).colorScheme.onSecondaryContainer,
                       fontWeight: FontWeight.w500,
                     ),
                   ),
                 ),
-                GestureDetector(
-                  onTap: () => setState(() {
+                IconButton(
+                  onPressed: () => setState(() {
                     _timeBlindnessAlert = null;
-                    _isAlertSticky = false;
                   }),
-                  child: Icon(
+                  tooltip: 'Dismiss alert',
+                  icon: Icon(
                     Icons.close,
                     color: Theme.of(context).colorScheme.onSecondaryContainer,
-                    size: 18,
+                    size: 20,
                   ),
                 ),
               ],
@@ -302,24 +348,20 @@ class _ExecuteScreenState extends State<ExecuteScreen>
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.all(24),
-        child: Column(
+        child: ScrollFill(
+          child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             // Header with coach avatar and task info
             Row(
               children: [
-                Semantics(
-                  label: 'Close task and return to home',
-                  button: true,
-                  excludeSemantics: true,
-                  child: SizedBox(
-                    width: kMinTouchTarget,
-                    height: kMinTouchTarget,
-                    child: IconButton(
-                      icon: const Icon(Icons.close),
-                      onPressed: () => _showExitConfirmation(context),
-                      tooltip: 'Close task',
-                    ),
+                SizedBox(
+                  width: kMinTouchTarget,
+                  height: kMinTouchTarget,
+                  child: IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => _showExitConfirmation(context),
+                    tooltip: 'Close task',
                   ),
                 ),
                 // Coach icon
@@ -346,37 +388,23 @@ class _ExecuteScreenState extends State<ExecuteScreen>
                   ),
                 ),
                 // Body Double mode button
-                Semantics(
-                  label: 'Open body double focus mode',
-                  button: true,
-                  excludeSemantics: true,
-                  child: SizedBox(
-                    width: kMinTouchTarget,
-                    height: kMinTouchTarget,
-                    child: IconButton(
-                      icon: const Icon(Icons.spa_outlined),
-                      onPressed: () => Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => const BodyDoubleScreen(),
-                        ),
-                      ),
-                      tooltip: 'Body Double Mode',
-                    ),
+                SizedBox(
+                  width: kMinTouchTarget,
+                  height: kMinTouchTarget,
+                  child: IconButton(
+                    icon: const Icon(Icons.spa_outlined),
+                    onPressed: () => _openBodyDouble(context),
+                    tooltip: 'Body Double Mode',
                   ),
                 ),
                 // View full plan button
-                Semantics(
-                  label: 'View full task plan',
-                  button: true,
-                  excludeSemantics: true,
-                  child: SizedBox(
-                    width: kMinTouchTarget,
-                    height: kMinTouchTarget,
-                    child: IconButton(
-                      icon: const Icon(Icons.list_alt),
-                      onPressed: () => _showTaskPlan(context, task),
-                      tooltip: 'View Plan',
-                    ),
+                SizedBox(
+                  width: kMinTouchTarget,
+                  height: kMinTouchTarget,
+                  child: IconButton(
+                    icon: const Icon(Icons.list_alt),
+                    onPressed: () => _showTaskPlan(context, task),
+                    tooltip: 'View Plan',
                   ),
                 ),
               ],
@@ -388,12 +416,13 @@ class _ExecuteScreenState extends State<ExecuteScreen>
             Semantics(
               label:
                   'Progress: ${(task.progress * 100).round()} percent complete. Step $stepNum of $totalSteps',
+              excludeSemantics: true,
               child: Column(
                 children: [
                   LinearProgressIndicator(
                     value: task.progress,
                     backgroundColor:
-                        Theme.of(context).colorScheme.primary.withOpacity(0.2),
+                        Theme.of(context).colorScheme.primary.withValues(alpha: 0.2),
                     minHeight: 8,
                     borderRadius: BorderRadius.circular(4),
                   ),
@@ -428,6 +457,7 @@ class _ExecuteScreenState extends State<ExecuteScreen>
             _buildActionButtons(context, provider),
             const SizedBox(height: 16),
           ],
+          ),
         ),
       ),
     );
@@ -442,7 +472,7 @@ class _ExecuteScreenState extends State<ExecuteScreen>
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.1),
+            color: Colors.black.withValues(alpha: 0.1),
             blurRadius: 20,
             offset: const Offset(0, 4),
           ),
@@ -535,8 +565,9 @@ class _ExecuteScreenState extends State<ExecuteScreen>
       return card;
     }
 
+    // Keyed by step so each new step gets its own entrance animation.
     return card
-        .animate()
+        .animate(key: ValueKey(step.id))
         .fadeIn(duration: const Duration(milliseconds: 300))
         .slideY(
             begin: 0.1, end: 0, duration: const Duration(milliseconds: 300));
@@ -587,23 +618,17 @@ class _ExecuteScreenState extends State<ExecuteScreen>
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         // Main "Done" button with proper touch target
-        Semantics(
-          label: 'Mark step as done',
-          button: true,
-          excludeSemantics: true,
-          hint: 'Double tap to complete this step',
-          child: SizedBox(
-            height: max(kMinTouchTarget, 56), // Ensure minimum touch target
-            child: ElevatedButton(
-              onPressed: () => _completeStep(provider),
-              style: ElevatedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                backgroundColor: Theme.of(context).colorScheme.primary,
-              ),
-              child: const Text(
-                AppStrings.done,
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-              ),
+        SizedBox(
+          height: max(kMinTouchTarget, 56), // Ensure minimum touch target
+          child: ElevatedButton(
+            onPressed: () => _completeStep(provider),
+            style: ElevatedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              backgroundColor: Theme.of(context).colorScheme.primary,
+            ),
+            child: const Text(
+              AppStrings.done,
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
             ),
           ),
         ),
@@ -611,48 +636,35 @@ class _ExecuteScreenState extends State<ExecuteScreen>
         Row(
           children: [
             Expanded(
-              child: Semantics(
-                label: 'Skip this step',
-                button: true,
-                excludeSemantics: true,
-                hint: 'Double tap to skip to the next step',
-                child: SizedBox(
-                  height: kMinTouchTarget,
-                  child: OutlinedButton(
-                    onPressed: () => _skipStep(provider),
-                    child: const Text(AppStrings.skip),
-                  ),
+              child: SizedBox(
+                height: kMinTouchTarget,
+                child: OutlinedButton(
+                  onPressed: () => _skipStep(provider),
+                  child: const Text(AppStrings.skip),
                 ),
               ),
             ),
             const SizedBox(width: 12),
             Expanded(
-              child: Semantics(
-                label: "I'm stuck on this step",
-                button: true,
-                excludeSemantics: true,
-                hint:
-                    'Double tap for help breaking down this step into smaller parts',
-                child: SizedBox(
-                  height: kMinTouchTarget,
-                  child: OutlinedButton(
-                    // Disable if step already has substeps
-                    onPressed: provider.activeTask!.currentStep!.hasSubSteps
-                        ? null
-                        : () => _showStuckDialog(
-                            context, provider.activeTask!.currentStep!),
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                    ),
-                    child: FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: Text(
-                        provider.activeTask!.currentStep!.hasSubSteps
-                            ? 'Already broken down'
-                            : AppStrings.imStuck,
-                        maxLines: 1,
-                        textAlign: TextAlign.center,
-                      ),
+              child: SizedBox(
+                height: kMinTouchTarget,
+                child: OutlinedButton(
+                  // Disable if step already has substeps
+                  onPressed: provider.activeTask!.currentStep!.hasSubSteps
+                      ? null
+                      : () => _showStuckDialog(
+                          context, provider.activeTask!.currentStep!),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                  ),
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      provider.activeTask!.currentStep!.hasSubSteps
+                          ? 'Already broken down'
+                          : AppStrings.imStuck,
+                      maxLines: 1,
+                      textAlign: TextAlign.center,
                     ),
                   ),
                 ),
@@ -689,25 +701,19 @@ class _ExecuteScreenState extends State<ExecuteScreen>
             spacing: 8,
             runSpacing: 8,
             children: options
-                .map((mins) => Semantics(
-                      label: '$mins minute timer',
-                      button: true,
-                      excludeSemantics: true,
-                      selected: _selectedMinutes == mins,
-                      child: SizedBox(
-                        height: kMinTouchTarget,
-                        child: ChoiceChip(
-                          label: Text('$mins min'),
-                          selected: _selectedMinutes == mins,
-                          onSelected: (selected) {
-                            setState(() {
-                              _selectedMinutes = selected ? mins : null;
-                            });
-                            if (selected) {
-                              _startTimer(mins);
-                            }
-                          },
-                        ),
+                .map((mins) => SizedBox(
+                      height: kMinTouchTarget,
+                      child: ChoiceChip(
+                        label: Text('$mins min'),
+                        selected: _selectedMinutes == mins,
+                        onSelected: (selected) {
+                          setState(() {
+                            _selectedMinutes = selected ? mins : null;
+                          });
+                          if (selected) {
+                            _startTimer(mins);
+                          }
+                        },
                       ),
                     ))
                 .toList(),
@@ -753,32 +759,85 @@ class _ExecuteScreenState extends State<ExecuteScreen>
     );
   }
 
+  Future<void> _openBodyDouble(BuildContext context) async {
+    _isCovered = true;
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const BodyDoubleScreen()),
+    );
+    if (!mounted) return;
+    _isCovered = false;
+    // Catch up on anything that elapsed while covered.
+    _onStepTick();
+    _onFocusTimerTick();
+  }
+
   void _startTimer(int minutes) {
+    _timer?.cancel();
+    _hasShown5MinWarning = false;
     setState(() {
-      _secondsRemaining = minutes * 60;
+      _timerTotalSeconds = minutes * 60;
+      _secondsRemaining = _timerTotalSeconds;
+      _timerEndsAt = clock.now().add(Duration(seconds: _timerTotalSeconds));
       _timerRunning = true;
     });
 
-    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (_secondsRemaining > 0 && _timerRunning) {
-        setState(() {
-          _secondsRemaining--;
-        });
-      } else if (_secondsRemaining == 0) {
-        timer.cancel();
-        _timerRunning = false;
-        HapticFeedback.heavyImpact();
-        _soundService.playTimerEnd();
-        // Announce timer completion for screen readers
-        SemanticsService.announce('Timer complete', TextDirection.ltr);
+    _timer = Timer.periodic(
+        const Duration(seconds: 1), (_) => _onFocusTimerTick());
+  }
+
+  void _onFocusTimerTick() {
+    if (!mounted || !_timerRunning || _timerEndsAt == null || _isCovered) {
+      return;
+    }
+
+    final remainingMs = _timerEndsAt!.difference(clock.now()).inMilliseconds;
+    final remaining = remainingMs <= 0 ? 0 : (remainingMs / 1000).ceil();
+
+    if (remaining > 0) {
+      if (remaining != _secondsRemaining) {
+        setState(() => _secondsRemaining = remaining);
       }
+      return;
+    }
+
+    _timer?.cancel();
+    _timer = null;
+    setState(() {
+      _secondsRemaining = 0;
+      _timerRunning = false;
+      _timerEndsAt = null;
     });
+    final provider = context.read<TaskProvider>();
+    if (provider.hapticEnabled) {
+      HapticFeedback.heavyImpact();
+    }
+    if (provider.soundEnabled) {
+      _soundService.playTimerEnd();
+    }
+    // Announce timer completion for screen readers
+    SemanticsService.announce('Timer complete', TextDirection.ltr);
   }
 
   void _toggleTimer() {
-    setState(() {
-      _timerRunning = !_timerRunning;
-    });
+    if (_timerRunning) {
+      // Pause: bring the remaining time up to date, then freeze it.
+      _onFocusTimerTick();
+      if (!_timerRunning) return; // Finished while catching up.
+      _timer?.cancel();
+      _timer = null;
+      setState(() {
+        _timerRunning = false;
+        _timerEndsAt = null;
+      });
+    } else if (_secondsRemaining > 0) {
+      setState(() {
+        _timerEndsAt =
+            clock.now().add(Duration(seconds: _secondsRemaining));
+        _timerRunning = true;
+      });
+      _timer = Timer.periodic(
+          const Duration(seconds: 1), (_) => _onFocusTimerTick());
+    }
   }
 
   void _completeStep(TaskProvider provider) {
@@ -813,6 +872,7 @@ class _ExecuteScreenState extends State<ExecuteScreen>
         _recordAndResetFocusTimer(provider);
       }
       _startStepTimer(); // Reset step timer for next step
+      setState(() {});
     } else {
       setState(() {
         _showCelebration = true;
@@ -821,14 +881,14 @@ class _ExecuteScreenState extends State<ExecuteScreen>
 
       Future.delayed(const Duration(milliseconds: 1200), () {
         if (mounted) {
-          setState(() {
-            _showCelebration = false;
-          });
           final advancedToNextStep = _completeCurrentStep(provider);
           if (advancedToNextStep) {
             _recordAndResetFocusTimer(provider);
           }
           _startStepTimer(); // Reset step timer for next step
+          setState(() {
+            _showCelebration = false;
+          });
         }
       });
     }
@@ -842,14 +902,19 @@ class _ExecuteScreenState extends State<ExecuteScreen>
   }
 
   void _recordAndResetFocusTimer(TaskProvider provider) {
-    if (_selectedMinutes != null) {
-      final minutesUsed = _selectedMinutes! - (_secondsRemaining ~/ 60);
+    if (_timerTotalSeconds > 0) {
+      _onFocusTimerTick();
+      final secondsUsed = _timerTotalSeconds - _secondsRemaining;
+      final minutesUsed = (secondsUsed / 60).round();
       if (minutesUsed > 0) {
         provider.recordTimerUsage(minutesUsed);
       }
     }
 
     _timer?.cancel();
+    _timer = null;
+    _timerEndsAt = null;
+    _timerTotalSeconds = 0;
     _secondsRemaining = 0;
     _timerRunning = false;
     _selectedMinutes = null;
@@ -864,12 +929,8 @@ class _ExecuteScreenState extends State<ExecuteScreen>
     SemanticsService.announce('Step skipped', TextDirection.ltr);
 
     provider.skipCurrentStep();
-    _timer?.cancel();
-    setState(() {
-      _secondsRemaining = 0;
-      _timerRunning = false;
-      _selectedMinutes = null;
-    });
+    // Focus time spent before skipping is still real focus time.
+    setState(() => _recordAndResetFocusTimer(provider));
     _startStepTimer(); // Reset step timer for next step
   }
 
@@ -894,7 +955,7 @@ class _ExecuteScreenState extends State<ExecuteScreen>
       label: 'Celebration: ${_celebrationMessage ?? 'Nice!'}',
       liveRegion: true,
       child: Container(
-        color: Colors.black.withOpacity(0.3),
+        color: Colors.black.withValues(alpha: 0.3),
         child: Center(
           child: reduceAnimations
               ? content
@@ -910,11 +971,29 @@ class _ExecuteScreenState extends State<ExecuteScreen>
   Widget _buildCompletionScreen(BuildContext context, Task task) {
     final provider = context.read<TaskProvider>();
     final coach = provider.selectedCoach;
+    final noProgress = task.endedWithoutProgress;
+    // Picked once so the text doesn't change on every rebuild.
+    _completionMessage ??= noProgress
+        ? AppStrings.allStepsSkippedMessage
+        : coach.getRandomCompletionMessage();
 
     // Play confetti on first build
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Nothing left to time once the task has ended.
+      _stopAllTimers();
+      if (mounted && _timeBlindnessAlert != null) {
+        setState(() => _timeBlindnessAlert = null);
+      }
       if (!_hasTriggeredCompletion) {
         _hasTriggeredCompletion = true;
+
+        if (noProgress) {
+          SemanticsService.announce(
+            '${AppStrings.allStepsSkippedTitle}. ${AppStrings.allStepsSkippedMessage}',
+            TextDirection.ltr,
+          );
+          return;
+        }
 
         if (_shouldShowConfetti(context)) {
           _confettiController.play();
@@ -949,7 +1028,9 @@ class _ExecuteScreenState extends State<ExecuteScreen>
           children: [
             // Coach icon and celebration
             Semantics(
-              label: '${coach.name} celebrating with you',
+              label: noProgress
+                  ? coach.name
+                  : '${coach.name} celebrating with you',
               child: Icon(
                 coach.icon,
                 size: 64,
@@ -960,7 +1041,9 @@ class _ExecuteScreenState extends State<ExecuteScreen>
             Semantics(
               header: true,
               child: Text(
-                AppStrings.youDidIt,
+                noProgress
+                    ? AppStrings.allStepsSkippedTitle
+                    : AppStrings.youDidIt,
                 style: Theme.of(context).textTheme.displayMedium,
                 textAlign: TextAlign.center,
               ),
@@ -968,7 +1051,7 @@ class _ExecuteScreenState extends State<ExecuteScreen>
             const SizedBox(height: 16),
             // Use coach-specific completion message
             Text(
-              coach.getRandomCompletionMessage(),
+              _completionMessage!,
               style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                     height: 1.5, // Improved line spacing
                   ),
@@ -1013,6 +1096,7 @@ class _ExecuteScreenState extends State<ExecuteScreen>
             ),
             const SizedBox(height: 32),
             // Action buttons row
+            if (!noProgress)
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
@@ -1064,9 +1148,7 @@ class _ExecuteScreenState extends State<ExecuteScreen>
               child: SizedBox(
                 height: kMinTouchTarget,
                 child: ElevatedButton(
-                  onPressed: () {
-                    Navigator.of(context).popUntil((route) => route.isFirst);
-                  },
+                  onPressed: () => _returnToTasks(context),
                   child: const Text(AppStrings.backToTasks),
                 ),
               ),
@@ -1086,19 +1168,19 @@ class _ExecuteScreenState extends State<ExecuteScreen>
     // Call the completion callback (used for routines)
     widget.onTaskComplete?.call();
 
-    // Check for rate prompt
+    // The rate prompt waits until the user leaves the celebration screen
+    // (see _returnToTasks) so it never interrupts the moment.
     settings.incrementTasksSinceLastAsk();
+  }
 
-    // Small delay before showing rate dialog to not interrupt celebration
+  void _returnToTasks(BuildContext context) {
+    final settings = context.read<SettingsService>();
+    final navigator = Navigator.of(context);
+    navigator.popUntil((route) => route.isFirst);
     if (settings.shouldShowRatePrompt) {
-      Future.delayed(const Duration(milliseconds: 2000), () {
-        if (mounted) {
-          settings.recordRatePromptShown();
-          showDialog(
-            context: context,
-            barrierDismissible: false,
-            builder: (ctx) => RateAppDialog(settings: settings),
-          );
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (navigator.mounted) {
+          RateAppDialog.showIfNeeded(navigator.context, settings);
         }
       });
     }
@@ -1148,15 +1230,16 @@ class _ExecuteScreenState extends State<ExecuteScreen>
                 child: ElevatedButton.icon(
                   onPressed: () async {
                     final statsService = context.read<StatsService>();
-                    Navigator.pop(ctx);
-                    await ShareService.captureAndShare(
-                      key: _shareCardKey,
+                    // Capture before closing the sheet - the card is gone after.
+                    final bytes = await ShareService.capture(_shareCardKey);
+                    if (ctx.mounted) Navigator.pop(ctx);
+                    final shared = await ShareService.share(
+                      imageBytes: bytes,
                       shareText:
                           'I just completed "${task.title}" using Tiny Steps! 🎉 #TinySteps #ProductivityWin',
                       subject: 'My Tiny Steps Achievement',
                     );
-                    // Track the share
-                    statsService.recordShare();
+                    if (shared) statsService.recordShare();
                   },
                   icon: const Icon(Icons.share),
                   label: const Text('Share'),
@@ -1170,66 +1253,6 @@ class _ExecuteScreenState extends State<ExecuteScreen>
             const SizedBox(height: 16),
           ],
         ),
-      ),
-    );
-  }
-
-  void _showTimeSlotPicker(BuildContext context, Task task) {
-    final calendarService = context.read<CalendarService>();
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => TimeSlotPicker(
-        task: task,
-        calendarService: calendarService,
-        onTimeSelected: (startTime) async {
-          final eventId =
-              await calendarService.createTimeBlock(task, startTime);
-          if (mounted) {
-            if (eventId != null) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: const Text('📅 Added to calendar!'),
-                  behavior: SnackBarBehavior.floating,
-                  action: SnackBarAction(
-                    label: 'Great!',
-                    onPressed: () {},
-                  ),
-                ),
-              );
-              SemanticsService.announce(
-                  'Task added to calendar', TextDirection.ltr);
-            } else {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content:
-                      Text('Could not add to calendar. Check permissions.'),
-                  behavior: SnackBarBehavior.floating,
-                ),
-              );
-            }
-          }
-        },
-        onQuickAdd: () async {
-          Navigator.pop(ctx);
-          final slot = await calendarService.findNextAvailableHour();
-          if (slot != null) {
-            final eventId =
-                await calendarService.createTimeBlock(task, slot.start);
-            if (mounted) {
-              if (eventId != null) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('📅 Blocked ${slot.label}'),
-                    behavior: SnackBarBehavior.floating,
-                  ),
-                );
-              }
-            }
-          }
-        },
       ),
     );
   }
@@ -1343,7 +1366,7 @@ class _ExecuteScreenState extends State<ExecuteScreen>
                 child: ElevatedButton.icon(
                   onPressed: () {
                     Navigator.pop(ctx);
-                    _breakDownStep(context, step);
+                    _breakDownStep(step);
                   },
                   icon: const Icon(Icons.call_split),
                   label: const Text("Break it down smaller"),
@@ -1674,14 +1697,19 @@ class _ExecuteScreenState extends State<ExecuteScreen>
     );
   }
 
-  void _breakDownStep(BuildContext context, TaskStep step) async {
+  Future<void> _breakDownStep(TaskStep step) async {
     final provider = context.read<TaskProvider>();
 
-    // Show loading dialog
-    showDialog(
+    // Show loading dialog. Back can't dismiss it, and we remove exactly this
+    // route when done so we never pop the screen underneath by mistake.
+    final navigator = Navigator.of(context, rootNavigator: true);
+    final loadingRoute = DialogRoute<void>(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) {
+        return PopScope(
+          canPop: false,
+          child: AlertDialog(
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -1695,19 +1723,28 @@ class _ExecuteScreenState extends State<ExecuteScreen>
         ),
       ),
     );
+      },
+    );
+    navigator.push(loadingRoute);
+
+    void closeLoadingDialog() {
+      if (loadingRoute.isActive) navigator.removeRoute(loadingRoute);
+    }
 
     try {
       // Call the provider to break down the current step
       final success = await provider.breakDownCurrentStep();
+      closeLoadingDialog();
 
       if (mounted) {
-        Navigator.pop(context); // Close loading dialog
-
         if (!success) {
           // User hit the free limit - show upgrade prompt
           _showBreakdownLimitDialog(context);
           return;
         }
+
+        // The smaller pieces get their own fresh time estimates.
+        setState(_startStepTimer);
 
         // Show success feedback
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1720,14 +1757,27 @@ class _ExecuteScreenState extends State<ExecuteScreen>
             'Step broken down into smaller pieces', TextDirection.ltr);
       }
     } catch (e) {
+      debugPrint('Step breakdown failed: $e');
+      closeLoadingDialog();
       if (mounted) {
-        Navigator.pop(context); // Close loading dialog
-
-        // Show error
+        final message = e is RateLimitException
+            ? TaskProvider.friendlyError(e)
+            : "Couldn't break this step down right now. Check your connection and try again.";
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Could not break down step: $e'),
+            content: Text(message),
             behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 8),
+            action: SnackBarAction(
+              label: 'Retry',
+              onPressed: () {
+                if (!mounted) return;
+                final current = provider.activeTask?.currentStep;
+                if (current != null && !current.hasSubSteps) {
+                  _breakDownStep(current);
+                }
+              },
+            ),
           ),
         );
       }
@@ -1740,7 +1790,7 @@ class _ExecuteScreenState extends State<ExecuteScreen>
       builder: (ctx) => AlertDialog(
         title: const Text('Need more breakdowns?'),
         content: const Text(
-          'You\'ve used your 5 free breakdowns. '
+          'You\'ve used your ${SettingsService.freeDecompositionLimit} free breakdowns. '
           'Upgrade to Pro for unlimited breakdowns and help whenever you\'re stuck!',
         ),
         actions: [
@@ -1833,7 +1883,7 @@ class _ExecuteScreenState extends State<ExecuteScreen>
             height: 24,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: Theme.of(context).colorScheme.primary.withOpacity(0.2),
+              color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.2),
             ),
             child: Icon(
               Icons.arrow_forward,

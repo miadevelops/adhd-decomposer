@@ -19,17 +19,12 @@ class Task {
     this.subStepBreakdownsUsed = 0,
   });
   
-  /// Free sub-step breakdowns per task
-  static const int freeSubStepLimit = 2;
-  
-  /// Whether user can still break down steps for free on this task
-  bool get canBreakDownForFree => subStepBreakdownsUsed < freeSubStepLimit;
-  
-  /// Remaining free breakdowns for this task
-  int get remainingFreeBreakdowns => (freeSubStepLimit - subStepBreakdownsUsed).clamp(0, freeSubStepLimit);
-
   bool get isCompleted => completedAt != null;
   
+  /// True when the task ended with every step skipped: it's closed, but
+  /// nothing was actually done, so it shouldn't be celebrated or counted.
+  bool get endedWithoutProgress => isCompleted && completedStepsCount == 0;
+
   int get completedStepsCount => steps.where((s) => s.isCompleted).length;
   
   double get progress => steps.isEmpty ? 0 : completedStepsCount / steps.length;

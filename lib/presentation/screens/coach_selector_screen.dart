@@ -4,6 +4,7 @@ import '../providers/task_provider.dart';
 import '../../core/constants/strings.dart';
 import '../../data/services/purchase_service.dart';
 import 'paywall_screen.dart';
+import '../../core/theme/app_theme.dart';
 
 class CoachSelectorScreen extends StatelessWidget {
   const CoachSelectorScreen({super.key});
@@ -23,7 +24,7 @@ class CoachSelectorScreen extends StatelessWidget {
             children: [
               // Header explanation
               Card(
-                color: Theme.of(context).colorScheme.primaryContainer.withOpacity(0.5),
+                color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.5),
                 child: Padding(
                   padding: const EdgeInsets.all(16),
                   child: Column(
@@ -53,7 +54,7 @@ class CoachSelectorScreen extends StatelessWidget {
               
               // Coach cards
               ...Coaches.all.map((coach) {
-                final isFree = Coaches.isFreeCoch(coach.type);
+                final isFree = Coaches.isFreeCoach(coach.type);
                 final isLocked = !isPremium && !isFree;
                 
                 return Padding(
@@ -111,7 +112,12 @@ class _CoachCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
+    return MergeSemantics(
+      child: Semantics(
+        button: true,
+        selected: isSelected,
+        hint: isLocked ? 'Requires Pro. Opens upgrade options.' : null,
+        child: Card(
       elevation: isSelected ? 4 : 1,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
@@ -233,7 +239,7 @@ class _CoachCard extends StatelessWidget {
                 label: 'On completion:',
                 message: coach.completionMessages.first,
                 icon: Icons.check_circle_outline,
-                color: Colors.green,
+                color: StatusColors.of(context).success,
               ),
               const SizedBox(height: 8),
               
@@ -242,7 +248,7 @@ class _CoachCard extends StatelessWidget {
                 label: 'When stuck:',
                 message: coach.stuckMessages.first,
                 icon: Icons.help_outline,
-                color: Colors.orange,
+                color: StatusColors.of(context).warning,
               ),
               const SizedBox(height: 8),
               
@@ -251,12 +257,14 @@ class _CoachCard extends StatelessWidget {
                 label: 'Greeting:',
                 message: coach.greetings.first,
                 icon: Icons.waving_hand_outlined,
-                color: Colors.blue,
+                color: Theme.of(context).colorScheme.primary,
               ),
             ],
           ),
         ),
       ),
+      ),
+        ),
       ),
     );
   }
@@ -283,8 +291,8 @@ class _MessagePreview extends StatelessWidget {
         Icon(icon, size: 16, color: color),
         const SizedBox(width: 8),
         Expanded(
-          child: RichText(
-            text: TextSpan(
+          child: Text.rich(
+            TextSpan(
               style: Theme.of(context).textTheme.bodySmall,
               children: [
                 TextSpan(

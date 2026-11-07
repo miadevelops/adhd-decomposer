@@ -46,3 +46,8 @@ app.*.map.json
 
 # Node
 node_modules/
+
+# Build outputs and local leftovers
+backend/dist/
+backend/.wrangler/
+android_backup/

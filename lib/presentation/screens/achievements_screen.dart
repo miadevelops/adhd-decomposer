@@ -161,7 +161,10 @@ class _AchievementDetailTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
 
-    return Card(
+    return MergeSemantics(
+      child: Semantics(
+        label: isUnlocked ? 'Unlocked achievement' : 'Locked achievement',
+        child: Card(
       margin: const EdgeInsets.only(bottom: 8),
       color: emphasized ? colorScheme.primary.withValues(alpha: 0.08) : null,
       child: Padding(
@@ -177,9 +180,11 @@ class _AchievementDetailTile extends StatelessWidget {
                 color: colorScheme.primary.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: Text(
-                isUnlocked ? achievement.icon : '🔒',
-                style: const TextStyle(fontSize: 24),
+              child: ExcludeSemantics(
+                child: Text(
+                  isUnlocked ? achievement.icon : '🔒',
+                  style: const TextStyle(fontSize: 24),
+                ),
               ),
             ),
             const SizedBox(width: 12),
@@ -228,6 +233,8 @@ class _AchievementDetailTile extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
         ),
       ),
     );

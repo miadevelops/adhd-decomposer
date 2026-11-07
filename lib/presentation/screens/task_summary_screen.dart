@@ -3,7 +3,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:provider/provider.dart';
 import '../providers/task_provider.dart';
 import '../../data/models/task.dart';
-import '../../data/coaches.dart';
+import 'decompose_screen.dart';
 import 'execute_screen.dart';
 
 /// Shows a summary of all steps before starting task execution.
@@ -17,9 +17,9 @@ class TaskSummaryScreen extends StatelessWidget {
       builder: (context, provider, _) {
         final task = provider.activeTask;
         if (task == null) {
-          return const Scaffold(
-            body: Center(child: Text('No task selected')),
-          );
+          // Shown briefly while this screen animates away after the plan
+          // is saved or discarded.
+          return const Scaffold(body: SizedBox.shrink());
         }
 
         final coach = Coaches.getByType(provider.selectedCoachType);
@@ -32,6 +32,7 @@ class TaskSummaryScreen extends StatelessWidget {
           appBar: AppBar(
             leading: IconButton(
               icon: const Icon(Icons.close),
+              tooltip: 'Save for later',
               onPressed: () {
                 provider.setActiveTask(null);
                 Navigator.of(context).pop();
@@ -39,6 +40,36 @@ class TaskSummaryScreen extends StatelessWidget {
             ),
             title: const Text('Your Plan'),
             centerTitle: true,
+            actions: [
+              PopupMenuButton<String>(
+                tooltip: 'Plan options',
+                onSelected: (value) {
+                  if (value == 'restart') {
+                    _removePlan(context, provider, task, startOver: true);
+                  } else if (value == 'discard') {
+                    _removePlan(context, provider, task, startOver: false);
+                  }
+                },
+                itemBuilder: (_) => const [
+                  PopupMenuItem(
+                    value: 'restart',
+                    child: ListTile(
+                      leading: Icon(Icons.refresh),
+                      title: Text('Start over'),
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
+                  PopupMenuItem(
+                    value: 'discard',
+                    child: ListTile(
+                      leading: Icon(Icons.delete_outline),
+                      title: Text('Discard plan'),
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ),
           body: Column(
             children: [
@@ -59,12 +90,18 @@ class TaskSummaryScreen extends StatelessWidget {
                           fontWeight: FontWeight.w600,
                         ),
                       ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Tap a step to change it.',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
                       const SizedBox(height: 12),
                       
                       ...task.steps.asMap().entries.map((entry) {
                         final index = entry.key;
                         final step = entry.value;
-                        return _buildStepCard(context, index, step)
+                        return _buildStepCard(
+                                context, provider, task, index, step)
                             .animate()
                             .fadeIn(delay: Duration(milliseconds: 50 * index))
                             .slideX(begin: 0.1, end: 0);
@@ -85,12 +122,121 @@ class TaskSummaryScreen extends StatelessWidget {
     );
   }
 
+  /// Discards the plan (with Undo). With [startOver], reopens the input
+  /// pre-filled so the user can tweak the wording and try again.
+  void _removePlan(BuildContext context, TaskProvider provider, Task task,
+      {required bool startOver}) {
+    final navigator = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    // Also clears the active task.
+    final undo = provider.deleteTask(task.id);
+
+    if (startOver) {
+      navigator.pushReplacement(
+        MaterialPageRoute(
+          builder: (_) => DecomposeScreen(initialText: task.title),
+        ),
+      );
+    } else {
+      navigator.pop();
+    }
+
+    if (undo == null) return;
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(startOver ? 'Old plan removed' : 'Plan discarded'),
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 5),
+        action: SnackBarAction(label: 'Undo', onPressed: undo),
+      ),
+    );
+  }
+
+  Future<void> _editStep(BuildContext context, TaskProvider provider,
+      Task task, int index) async {
+    final step = task.steps[index];
+    final actionController = TextEditingController(text: step.action);
+    var minutes = step.estimatedMinutes;
+
+    final result = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          title: Text('Step ${index + 1}'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: actionController,
+                autofocus: true,
+                maxLines: 3,
+                minLines: 1,
+                textCapitalization: TextCapitalization.sentences,
+                decoration: const InputDecoration(labelText: 'What to do'),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  const Expanded(child: Text('Minutes')),
+                  IconButton(
+                    tooltip: 'Less time',
+                    icon: const Icon(Icons.remove_circle_outline),
+                    onPressed: minutes > 1
+                        ? () => setDialogState(() => minutes--)
+                        : null,
+                  ),
+                  Text('$minutes',
+                      style: Theme.of(dialogContext).textTheme.titleMedium),
+                  IconButton(
+                    tooltip: 'More time',
+                    icon: const Icon(Icons.add_circle_outline),
+                    onPressed: minutes < 120
+                        ? () => setDialogState(() => minutes++)
+                        : null,
+                  ),
+                ],
+              ),
+            ],
+          ),
+          actions: [
+            if (task.steps.length > 1)
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop('delete'),
+                style: TextButton.styleFrom(
+                  foregroundColor: Theme.of(dialogContext).colorScheme.error,
+                ),
+                child: const Text('Remove step'),
+              ),
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop('save'),
+              child: const Text('Save'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    final newAction = actionController.text;
+    actionController.dispose();
+    if (result == 'save') {
+      provider.updateStep(task, index,
+          action: newAction, estimatedMinutes: minutes);
+    } else if (result == 'delete') {
+      provider.removeStep(task, index);
+    }
+  }
+
   Widget _buildHeaderCard(BuildContext context, Task task, int totalMinutes, coach) {
     final hours = totalMinutes ~/ 60;
     final minutes = totalMinutes % 60;
     final timeString = hours > 0
         ? '${hours}h ${minutes}min'
-        : '${minutes} min';
+        : '$minutes min';
 
     return Card(
       elevation: 0,
@@ -164,12 +310,17 @@ class TaskSummaryScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildStepCard(BuildContext context, int index, TaskStep step) {
+  Widget _buildStepCard(BuildContext context, TaskProvider provider, Task task,
+      int index, TaskStep step) {
+    final editable = provider.canEditStep(task, index);
     return Card(
       elevation: 0,
       margin: const EdgeInsets.only(bottom: 8),
       color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
-      child: Padding(
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: editable ? () => _editStep(context, provider, task, index) : null,
+        child: Padding(
         padding: const EdgeInsets.all(16),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -213,7 +364,15 @@ class TaskSummaryScreen extends StatelessWidget {
                 ],
               ),
             ),
+            if (editable)
+              Icon(
+                Icons.edit_outlined,
+                size: 18,
+                semanticLabel: 'Edit step',
+                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
+              ),
           ],
+        ),
         ),
       ),
     );

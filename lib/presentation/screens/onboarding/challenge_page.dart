@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import '../../widgets/scroll_fill.dart';
 
 class ChallengePage extends StatelessWidget {
   final String? selectedChallenge;
@@ -36,7 +37,7 @@ class ChallengePage extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.all(32),
-      child: Column(
+      child: ScrollFill(child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const SizedBox(height: 24),
@@ -87,7 +88,7 @@ class ChallengePage extends StatelessWidget {
           
           const Spacer(),
         ],
-      ),
+      )),
     );
   }
 }
@@ -113,11 +114,12 @@ class _ChallengeCard extends StatelessWidget {
       label: '$title. $description',
       button: true,
       selected: isSelected,
+      onTap: onTap,
       child: ExcludeSemantics(
         child: Material(
       color: isSelected
           ? Theme.of(context).colorScheme.primaryContainer
-          : Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.5),
+          : Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
       borderRadius: BorderRadius.circular(16),
       child: InkWell(
         onTap: onTap,
@@ -130,7 +132,7 @@ class _ChallengeCard extends StatelessWidget {
             border: Border.all(
               color: isSelected
                   ? Theme.of(context).colorScheme.primary
-                  : Theme.of(context).colorScheme.outline.withOpacity(0.3),
+                  : Theme.of(context).colorScheme.outline.withValues(alpha: 0.3),
               width: 2,
             ),
           ),
@@ -142,7 +144,7 @@ class _ChallengeCard extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: isSelected
                       ? Theme.of(context).colorScheme.primary
-                      : Theme.of(context).colorScheme.primary.withOpacity(0.1),
+                      : Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Icon(

@@ -1,5 +1,6 @@
 /// Screenshot-specific mock data and state builders for App Store screenshots.
 /// This file provides pre-populated data that creates visually appealing screenshots.
+library;
 
 import '../data/models/task.dart';
 import '../data/services/stats_service.dart';

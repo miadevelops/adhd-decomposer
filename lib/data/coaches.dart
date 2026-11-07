@@ -211,7 +211,7 @@ Include realistic time estimates and clear action steps.
   static List<Coach> get premiumCoaches => [cheerleader, drill, friend];
   
   /// Check if a coach type is free
-  static bool isFreeCoch(CoachType type) {
+  static bool isFreeCoach(CoachType type) {
     return type == CoachType.default_ || type == CoachType.zen;
   }
   

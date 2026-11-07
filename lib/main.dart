@@ -1,5 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:provider/provider.dart';
 import 'core/theme/app_theme.dart';
@@ -28,65 +32,71 @@ import 'presentation/screens/body_double_screen.dart';
 final GlobalKey<NavigatorState> globalNavigatorKey =
     GlobalKey<NavigatorState>();
 
+/// Runs one startup step without letting its failure block app launch.
+Future<void> _initStep(String name, Future<void> Function() step) async {
+  try {
+    await step();
+  } catch (e, stack) {
+    debugPrint('Startup step "$name" failed: $e\n$stack');
+  }
+}
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // Fonts ship in assets/google_fonts, so never fetch them from Google at
+  // runtime (works offline and avoids a third-party request on launch).
+  GoogleFonts.config.allowRuntimeFetching = false;
+  LicenseRegistry.addLicense(() async* {
+    for (final family in const ['Nunito', 'Inter']) {
+      final license =
+          await rootBundle.loadString('assets/google_fonts/$family-OFL.txt');
+      yield LicenseEntryWithLineBreaks(['google_fonts', family], license);
+    }
+  });
+
   // Initialize Hive for local storage
-  await Hive.initFlutter();
+  await _initStep('hive', Hive.initFlutter);
 
-  // Initialize settings
   final settings = SettingsService();
-  await settings.initialize();
-
-  // Initialize theme provider
   final themeProvider = ThemeProvider();
-  await themeProvider.initialize();
-
-  // Initialize stats
   final stats = StatsService();
-  await stats.initialize();
-
-  // Initialize achievements
   final achievements = AchievementsService();
-  await achievements.initialize(stats);
-
-  // Initialize widget service
-  await WidgetService.initialize();
-
-  // Initialize notifications
   final notifications = NotificationService();
-  await notifications.initialize();
-
-  // Initialize analytics (stub for now)
   final analytics = AnalyticsService();
-  await analytics.initialize();
-
-  // Initialize calendar service
   final calendar = CalendarService();
-  await calendar.initialize();
-
-  // Initialize routines service
   final routines = RoutineService();
-  await routines.initialize();
-
-  // Initialize purchase service
   final purchases = PurchaseService();
-  await purchases.initialize();
-
-  // Initialize Siri Shortcuts service
   final siri = SiriService();
-  await siri.initialize();
-
-  // Initialize XP service
   final xpService = XPService();
-  await xpService.initialize();
 
-  // Set preferred orientations
-  await SystemChrome.setPreferredOrientations([
-    DeviceOrientation.portraitUp,
-    DeviceOrientation.portraitDown,
+  // Settings first: other screens read it immediately.
+  await _initStep('settings', settings.initialize);
+
+  // Independent services start in parallel; a failure in one doesn't stop
+  // the others or leave the user on a blank screen.
+  await Future.wait([
+    _initStep('theme', themeProvider.initialize),
+    _initStep('stats+achievements', () async {
+      await stats.initialize();
+      await achievements.initialize(stats);
+    }),
+    _initStep('widgets', WidgetService.initialize),
+    _initStep('notifications', notifications.initialize),
+    _initStep('analytics', analytics.initialize),
+    _initStep('calendar', calendar.initialize),
+    _initStep('routines', routines.initialize),
+    _initStep('purchases', purchases.initialize),
+    _initStep('siri', siri.initialize),
+    _initStep('xp', xpService.initialize),
+    _initStep(
+      'orientation',
+      () => SystemChrome.setPreferredOrientations([
+        DeviceOrientation.portraitUp,
+        DeviceOrientation.portraitDown,
+      ]),
+    ),
   ]);
-
   runApp(ADHDDecomposerApp(
     settings: settings,
     stats: stats,
@@ -131,6 +141,11 @@ class ADHDDecomposerApp extends StatefulWidget {
 class _ADHDDecomposerAppState extends State<ADHDDecomposerApp> {
   late bool _showOnboarding;
 
+  /// A deep link that arrived during onboarding; it runs once that's done.
+  VoidCallback? _pendingDeepLink;
+
+  StreamSubscription<Uri?>? _widgetClickSubscription;
+
   @override
   void initState() {
     super.initState();
@@ -141,79 +156,77 @@ class _ADHDDecomposerAppState extends State<ADHDDecomposerApp> {
     _setupSiriHandlers();
   }
 
+  @override
+  void dispose() {
+    _widgetClickSubscription?.cancel();
+    super.dispose();
+  }
+
+  /// Single entry point for widget, notification and Siri navigation.
+  /// Runs after the current frame so the navigator is ready, and waits until
+  /// onboarding is finished so nothing is pushed on top of it.
+  void _runDeepLink(VoidCallback action) {
+    if (!mounted) return;
+    if (_showOnboarding) {
+      _pendingDeepLink = action;
+      return;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) action();
+    });
+  }
+
   /// Set up Siri Shortcuts navigation handlers
   void _setupSiriHandlers() {
     final siri = SiriService();
 
-    // Start new task - navigate to decompose screen
-    siri.onStartNewTask = () {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _navigateToRoute('decompose');
-      });
-    };
-
-    // Continue task - navigate to execute screen
-    siri.onContinueTask = () {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _navigateToRoute('execute');
-      });
-    };
-
-    // Show progress - navigate to stats screen
-    siri.onShowProgress = () {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _navigateToRoute('stats');
-      });
-    };
-
-    // Start routine - navigate to routines and try to start the named routine
-    siri.onStartRoutine = (routineName) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _navigateToRoutine(routineName);
-      });
-    };
+    siri.onStartNewTask = () => _runDeepLink(() => _navigateToRoute('decompose'));
+    siri.onContinueTask = () => _runDeepLink(() => _navigateToRoute('execute'));
+    siri.onShowProgress = () => _runDeepLink(() => _navigateToRoute('stats'));
+    siri.onStartRoutine =
+        (routineName) => _runDeepLink(() => _navigateToRoutine(routineName));
   }
 
-  /// Navigate to a specific routine by name
+  /// Starts the routine with this name, or opens the routines list if
+  /// there's no exact match.
   void _navigateToRoutine(String routineName) {
     final context = globalNavigatorKey.currentContext;
     if (context == null) return;
 
-    // First navigate to routines screen
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const RoutinesScreen()),
-    );
-
-    // TODO: In future, could auto-start the routine matching the name
-    // For MVP, just navigate to the routines screen
+    final wanted = routineName.trim().toLowerCase();
+    final matches = context
+        .read<RoutineService>()
+        .routines
+        .where((r) => r.name.trim().toLowerCase() == wanted);
+    if (wanted.isNotEmpty && matches.isNotEmpty) {
+      startRoutineFlow(context, matches.first);
+    } else {
+      _navigateToRoute('routines');
+    }
   }
 
   Future<void> _handleWidgetLaunch() async {
     final uri = await WidgetService.getInitialUri();
     if (uri != null) {
-      // Navigate after first frame when context is ready
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _navigateToRoute(uri.host);
-      });
+      _runDeepLink(() => _navigateToRoute(uri.host));
     }
   }
 
   void _listenToWidgetClicks() {
-    WidgetService.widgetClicked.listen((uri) {
-      if (uri != null && mounted) {
-        _navigateToRoute(uri.host);
-      }
-    });
+    _widgetClickSubscription = WidgetService.widgetClicked.listen(
+      (uri) {
+        if (uri != null) {
+          _runDeepLink(() => _navigateToRoute(uri.host));
+        }
+      },
+      onError: (Object e) => debugPrint('Widget click stream error: $e'),
+    );
   }
 
   void _setupNotificationHandling() {
-    // Set up notification tap callback
     NotificationService.onNotificationTap = (payload) {
-      if (payload != null && mounted) {
-        // Small delay to ensure navigation context is ready
-        Future.delayed(const Duration(milliseconds: 100), () {
-          _handleNotificationNavigation(payload);
-        });
+      if (payload != null) {
+        _runDeepLink(() => _handleNotificationNavigation(payload));
       }
     };
   }
@@ -234,10 +247,7 @@ class _ADHDDecomposerAppState extends State<ADHDDecomposerApp> {
         break;
 
       case NotificationService.payloadStats:
-        // Navigate to stats screen
-        Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const StatsScreen()),
-        );
+        _navigateToRoute('stats');
         break;
     }
   }
@@ -245,11 +255,21 @@ class _ADHDDecomposerAppState extends State<ADHDDecomposerApp> {
   void _navigateToRoute(String route) {
     final context = globalNavigatorKey.currentContext;
     if (context == null) return;
+    final navigator = Navigator.of(context);
+
+    // Don't stack a second copy of the screen that's already on top.
+    String? topRouteName;
+    navigator.popUntil((r) {
+      topRouteName = r.settings.name;
+      return true;
+    });
+    if (topRouteName == route) return;
+    final settings = RouteSettings(name: route);
 
     switch (route) {
       case 'decompose':
         Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const DecomposeScreen()),
+          MaterialPageRoute(settings: settings, builder: (_) => const DecomposeScreen()),
         );
         break;
       case 'execute':
@@ -257,30 +277,30 @@ class _ADHDDecomposerAppState extends State<ADHDDecomposerApp> {
         final taskProvider = Provider.of<TaskProvider>(context, listen: false);
         if (taskProvider.activeTask != null) {
           Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const ExecuteScreen()),
+            MaterialPageRoute(settings: settings, builder: (_) => const ExecuteScreen()),
           );
         } else if (taskProvider.activeTasks.isNotEmpty) {
           // Set the first active task as active and navigate
           final task = taskProvider.activeTasks.first;
           taskProvider.setActiveTask(task);
           Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const ExecuteScreen()),
+            MaterialPageRoute(settings: settings, builder: (_) => const ExecuteScreen()),
           );
         }
         break;
       case 'stats':
         Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const StatsScreen()),
+          MaterialPageRoute(settings: settings, builder: (_) => const StatsScreen()),
         );
         break;
       case 'routines':
         Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const RoutinesScreen()),
+          MaterialPageRoute(settings: settings, builder: (_) => const RoutinesScreen()),
         );
         break;
       case 'bodydouble':
         Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const BodyDoubleScreen()),
+          MaterialPageRoute(settings: settings, builder: (_) => const BodyDoubleScreen()),
         );
         break;
     }
@@ -290,6 +310,9 @@ class _ADHDDecomposerAppState extends State<ADHDDecomposerApp> {
     setState(() {
       _showOnboarding = false;
     });
+    final pending = _pendingDeepLink;
+    _pendingDeepLink = null;
+    if (pending != null) _runDeepLink(pending);
   }
 
   @override

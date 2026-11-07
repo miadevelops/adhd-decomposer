@@ -1,29 +1,40 @@
 import { Env, DecomposeRequest, DecomposeResponse, StepDetail } from './types';
 
-const CACHE_PREFIX = 'decompose:';
+const CACHE_PREFIX = 'decompose:v2:';
+const OPENAI_URL = 'https://api.openai.com/v1/chat/completions';
+const OPENAI_TIMEOUT_MS = 25_000;
+const MAX_STEPS = 15;
+const MAX_SUBSTEPS = 8;
 
-// Normalize task for cache key
-function normalizeTask(task: string): string {
+// Normalize task for cache key. Unicode-aware so non-Latin tasks don't collapse
+// to the same (empty) key.
+export function normalizeTask(task: string): string {
   return task
+    .normalize('NFKC')
     .toLowerCase()
     .trim()
-    .replace(/[^\w\s]/g, '')
-    .replace(/\s+/g, ' ')
-    .substring(0, 100);
+    .replace(/[^\p{L}\p{N}\s]/gu, '')
+    .replace(/\s+/g, ' ');
 }
 
-function getCacheKey(task: string, style: string): string {
-  return `${CACHE_PREFIX}${style}:${normalizeTask(task)}`;
+async function sha256Hex(input: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(input));
+  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+export async function getCacheKey(request: DecomposeRequest): Promise<string> {
+  const style = request.style || 'standard';
+  const ctx = request.context ?? {};
+  const material = [style, ctx.timeOfDay ?? '', ctx.energy ?? '', normalizeTask(request.task)].join('|');
+  return `${CACHE_PREFIX}${await sha256Hex(material)}`;
 }
 
 export async function getCachedResponse(
   env: Env,
-  task: string,
-  style: string
+  request: DecomposeRequest
 ): Promise<DecomposeResponse | null> {
-  const key = getCacheKey(task, style);
-  const cached = await env.CACHE.get<DecomposeResponse>(key, 'json');
-  if (cached) {
+  const cached = await env.CACHE.get<DecomposeResponse>(await getCacheKey(request), 'json');
+  if (cached?.success && cached.task) {
     return { ...cached, cached: true };
   }
   return null;
@@ -31,13 +42,52 @@ export async function getCachedResponse(
 
 export async function cacheResponse(
   env: Env,
-  task: string,
-  style: string,
+  request: DecomposeRequest,
   response: DecomposeResponse
 ): Promise<void> {
-  const key = getCacheKey(task, style);
   const ttl = parseInt(env.CACHE_TTL_SECONDS) || 86400;
-  await env.CACHE.put(key, JSON.stringify(response), { expirationTtl: ttl });
+  await env.CACHE.put(await getCacheKey(request), JSON.stringify(response), { expirationTtl: ttl });
+}
+
+async function callOpenAI(env: Env, body: Record<string, unknown>): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), OPENAI_TIMEOUT_MS);
+  try {
+    return await fetch(OPENAI_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${env.OPENAI_API_KEY}`,
+      },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function clampMinutes(value: unknown, fallback: number): number {
+  const n = typeof value === 'number' ? value : parseInt(String(value ?? ''), 10);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(120, Math.max(1, Math.round(n)));
+}
+
+export function normalizeSteps(rawSteps: unknown): StepDetail[] {
+  if (!Array.isArray(rawSteps)) return [];
+  return rawSteps
+    .map((s): StepDetail | null => {
+      if (typeof s === 'string') {
+        return { action: s.trim(), estimatedMinutes: 5 };
+      }
+      if (s && typeof s === 'object' && typeof (s as { action?: unknown }).action === 'string') {
+        const step = s as { action: string; estimatedMinutes?: unknown };
+        return { action: step.action.trim(), estimatedMinutes: clampMinutes(step.estimatedMinutes, 5) };
+      }
+      return null;
+    })
+    .filter((s): s is StepDetail => s !== null && s.action.length > 0)
+    .slice(0, MAX_STEPS);
 }
 
 // System prompts for different styles
@@ -123,22 +173,15 @@ export async function decomposeTask(
   const systemPrompt = STYLE_PROMPTS[style] + getContextAddition(request.context);
 
   try {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${env.OPENAI_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: `Break down this task: ${request.task}` },
-        ],
-        temperature: 0.7,
-        max_tokens: 1000,
-        response_format: { type: 'json_object' },
-      }),
+    const response = await callOpenAI(env, {
+      model: 'gpt-4o-mini',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: `Break down this task: ${request.task}` },
+      ],
+      temperature: 0.7,
+      max_tokens: 1000,
+      response_format: { type: 'json_object' },
     });
 
     if (!response.ok) {
@@ -164,23 +207,28 @@ export async function decomposeTask(
 
     const parsed = JSON.parse(content);
 
-    // Normalize steps: support both string[] (legacy) and {action, estimatedMinutes}[] formats
-    const steps: StepDetail[] = (parsed.steps || []).map((s: string | { action: string; estimatedMinutes?: number }) => {
-      if (typeof s === 'string') {
-        return { action: s, estimatedMinutes: 5 };
-      }
-      return { action: s.action, estimatedMinutes: s.estimatedMinutes ?? 5 };
-    });
+    // Supports both string[] (legacy) and {action, estimatedMinutes}[] formats.
+    const steps = normalizeSteps(parsed?.steps);
+    if (steps.length === 0) {
+      console.error('OpenAI returned no usable steps');
+      return {
+        success: false,
+        error: 'AI returned an empty breakdown',
+      };
+    }
 
     const totalEstimatedMinutes = steps.reduce((sum: number, s: StepDetail) => sum + s.estimatedMinutes, 0);
 
     return {
       success: true,
       task: {
-        title: parsed.title || request.task,
+        title: typeof parsed.title === 'string' && parsed.title.trim() ? parsed.title.trim() : request.task,
         steps,
         totalEstimatedMinutes,
-        encouragement: parsed.encouragement || 'You\'ve got this!',
+        encouragement:
+          typeof parsed.encouragement === 'string' && parsed.encouragement.trim()
+            ? parsed.encouragement.trim()
+            : 'You\'ve got this!',
       },
       cached: false,
     };
@@ -220,22 +268,15 @@ export async function getSubSteps(
     : `Step I'm stuck on: ${step}`;
 
   try {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${env.OPENAI_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        messages: [
-          { role: 'system', content: SUBSTEPS_PROMPT },
-          { role: 'user', content: userMessage },
-        ],
-        temperature: 0.7,
-        max_tokens: 500,
-        response_format: { type: 'json_object' },
-      }),
+    const response = await callOpenAI(env, {
+      model: 'gpt-4o-mini',
+      messages: [
+        { role: 'system', content: SUBSTEPS_PROMPT },
+        { role: 'user', content: userMessage },
+      ],
+      temperature: 0.7,
+      max_tokens: 500,
+      response_format: { type: 'json_object' },
     });
 
     if (!response.ok) {
@@ -260,10 +301,24 @@ export async function getSubSteps(
     }
 
     const parsed = JSON.parse(content);
+    const substeps = Array.isArray(parsed?.substeps)
+      ? (parsed.substeps as unknown[])
+          .filter((s): s is string => typeof s === 'string')
+          .map((s) => s.trim())
+          .filter((s) => s.length > 0)
+          .slice(0, MAX_SUBSTEPS)
+      : [];
+    if (substeps.length === 0) {
+      console.error('OpenAI returned no usable substeps');
+      return {
+        success: false,
+        error: 'AI returned an empty breakdown',
+      };
+    }
     return {
       success: true,
-      substeps: parsed.substeps,
-      encouragement: parsed.encouragement,
+      substeps,
+      encouragement: typeof parsed.encouragement === 'string' ? parsed.encouragement : undefined,
     };
   } catch (error) {
     console.error('SubSteps error:', error);

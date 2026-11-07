@@ -1,27 +1,30 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+/// Minimum touch target size for accessibility (48x48dp, per Material and
+/// WCAG guidance).
+const double kMinTouchTarget = 48.0;
+
 /// App color palette with WCAG AA contrast compliance
 ///
-/// Color contrast ratios verified:
-/// - Primary on white: 3.1:1 (passes for large text, enhanced to meet AA for normal text)
+/// Color contrast ratios (light theme, against white):
+/// - Primary: 4.8:1 (AA for normal text, incl. white button labels)
+/// - Secondary: 4.9:1
+/// - Success / warning: 5.1:1 / 4.9:1
 /// - Text on background: 11.6:1 (passes AA and AAA)
 /// - Secondary text: 4.85:1 (passes AA)
 class AppColors {
   // Light theme - Enhanced for better contrast
-  static const Color primaryLight =
-      Color(0xFF2BA49A); // Darker teal for better contrast (was 4ECDC4)
-  static const Color secondaryLight =
-      Color(0xFFE55050); // Darker coral for better contrast (was FF6B6B)
+  static const Color primaryLight = Color(0xFF1E8078);
+  static const Color secondaryLight = Color(0xFFC94040);
   static const Color backgroundLight = Color(0xFFFAFAFA);
   static const Color surfaceLight = Color(0xFFFFFFFF);
   static const Color textLight =
       Color(0xFF1A1A1A); // Darker for better contrast (was 2D3436)
   static const Color textSecondaryLight =
       Color(0xFF555555); // Darker secondary text (was 636E72)
-  static const Color successLight = Color(0xFF4CAF50); // Standard success green
-  static const Color warningLight =
-      Color(0xFFEF9A00); // Darker warning for contrast
+  static const Color successLight = Color(0xFF2E7D32);
+  static const Color warningLight = Color(0xFFA65F00);
   static const Color errorLight = Color(0xFFD32F2F); // Standard error red
 
   // Dark theme - Enhanced for better contrast
@@ -131,7 +134,7 @@ class AppTheme {
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
         borderSide:
-            BorderSide(color: AppColors.textSecondaryLight.withOpacity(0.5)),
+            BorderSide(color: AppColors.textSecondaryLight.withValues(alpha: 0.5)),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
@@ -144,24 +147,25 @@ class AppTheme {
       contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
     ),
     // Focus/highlight for keyboard navigation
-    focusColor: AppColors.focusLight.withOpacity(0.3),
-    hoverColor: AppColors.primaryLight.withOpacity(0.1),
-    splashColor: AppColors.primaryLight.withOpacity(0.2),
+    focusColor: AppColors.focusLight.withValues(alpha: 0.3),
+    hoverColor: AppColors.primaryLight.withValues(alpha: 0.1),
+    splashColor: AppColors.primaryLight.withValues(alpha: 0.2),
     // Checkbox/Radio with proper touch targets
-    checkboxTheme: CheckboxThemeData(
+    checkboxTheme: const CheckboxThemeData(
       materialTapTargetSize: MaterialTapTargetSize.padded,
       visualDensity: VisualDensity.standard,
     ),
-    radioTheme: RadioThemeData(
+    radioTheme: const RadioThemeData(
       materialTapTargetSize: MaterialTapTargetSize.padded,
       visualDensity: VisualDensity.standard,
     ),
-    switchTheme: SwitchThemeData(
+    switchTheme: const SwitchThemeData(
       materialTapTargetSize: MaterialTapTargetSize.padded,
     ),
-    chipTheme: ChipThemeData(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+    chipTheme: const ChipThemeData(
+      padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
     ),
+    extensions: const [StatusColors.light],
   );
 
   static ThemeData darkTheme = ThemeData(
@@ -240,7 +244,7 @@ class AppTheme {
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
         borderSide:
-            BorderSide(color: AppColors.textSecondaryDark.withOpacity(0.5)),
+            BorderSide(color: AppColors.textSecondaryDark.withValues(alpha: 0.5)),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
@@ -253,24 +257,25 @@ class AppTheme {
       contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
     ),
     // Focus/highlight for keyboard navigation
-    focusColor: AppColors.focusDark.withOpacity(0.3),
-    hoverColor: AppColors.primaryDark.withOpacity(0.1),
-    splashColor: AppColors.primaryDark.withOpacity(0.2),
+    focusColor: AppColors.focusDark.withValues(alpha: 0.3),
+    hoverColor: AppColors.primaryDark.withValues(alpha: 0.1),
+    splashColor: AppColors.primaryDark.withValues(alpha: 0.2),
     // Checkbox/Radio with proper touch targets
-    checkboxTheme: CheckboxThemeData(
+    checkboxTheme: const CheckboxThemeData(
       materialTapTargetSize: MaterialTapTargetSize.padded,
       visualDensity: VisualDensity.standard,
     ),
-    radioTheme: RadioThemeData(
+    radioTheme: const RadioThemeData(
       materialTapTargetSize: MaterialTapTargetSize.padded,
       visualDensity: VisualDensity.standard,
     ),
-    switchTheme: SwitchThemeData(
+    switchTheme: const SwitchThemeData(
       materialTapTargetSize: MaterialTapTargetSize.padded,
     ),
-    chipTheme: ChipThemeData(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+    chipTheme: const ChipThemeData(
+      padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
     ),
+    extensions: const [StatusColors.dark],
   );
 
   static ThemeData lightThemeFor(String rewardThemeId) {
@@ -353,9 +358,9 @@ class AppTheme {
                 onSurface: AppColors.textDark,
               )
             : const _RewardPalette(
-                primary: Color(0xFFD94F4F),
+                primary: Color(0xFFC94040),
                 onPrimary: Colors.white,
-                secondary: Color(0xFF238D85),
+                secondary: Color(0xFF1E8078),
                 onSecondary: Colors.white,
                 background: Color(0xFFFFF8F6),
                 surface: Colors.white,
@@ -375,7 +380,7 @@ class AppTheme {
             : const _RewardPalette(
                 primary: Color(0xFF147D92),
                 onPrimary: Colors.white,
-                secondary: Color(0xFFC94F32),
+                secondary: Color(0xFFBF4530),
                 onSecondary: Colors.white,
                 background: Color(0xFFF4FAFC),
                 surface: Colors.white,
@@ -523,4 +528,69 @@ class _RewardPalette {
     required this.surface,
     required this.onSurface,
   });
+}
+
+/// Semantic status colours that follow the active light/dark theme.
+///
+/// Use `StatusColors.of(context)` instead of hard-coded `Colors.green` /
+/// `Colors.orange`, which have poor contrast on light surfaces.
+@immutable
+class StatusColors extends ThemeExtension<StatusColors> {
+  final Color success;
+  final Color onSuccess;
+  final Color warning;
+  final Color onWarning;
+
+  const StatusColors({
+    required this.success,
+    required this.onSuccess,
+    required this.warning,
+    required this.onWarning,
+  });
+
+  static const light = StatusColors(
+    success: AppColors.successLight,
+    onSuccess: Colors.white,
+    warning: AppColors.warningLight,
+    onWarning: Colors.white,
+  );
+
+  static const dark = StatusColors(
+    success: AppColors.successDark,
+    onSuccess: Colors.black,
+    warning: AppColors.warningDark,
+    onWarning: Colors.black,
+  );
+
+  static StatusColors of(BuildContext context) {
+    final theme = Theme.of(context);
+    return theme.extension<StatusColors>() ??
+        (theme.brightness == Brightness.dark ? dark : light);
+  }
+
+  @override
+  StatusColors copyWith({
+    Color? success,
+    Color? onSuccess,
+    Color? warning,
+    Color? onWarning,
+  }) {
+    return StatusColors(
+      success: success ?? this.success,
+      onSuccess: onSuccess ?? this.onSuccess,
+      warning: warning ?? this.warning,
+      onWarning: onWarning ?? this.onWarning,
+    );
+  }
+
+  @override
+  StatusColors lerp(ThemeExtension<StatusColors>? other, double t) {
+    if (other is! StatusColors) return this;
+    return StatusColors(
+      success: Color.lerp(success, other.success, t)!,
+      onSuccess: Color.lerp(onSuccess, other.onSuccess, t)!,
+      warning: Color.lerp(warning, other.warning, t)!,
+      onWarning: Color.lerp(onWarning, other.onWarning, t)!,
+    );
+  }
 }

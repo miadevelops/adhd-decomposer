@@ -1,67 +1,87 @@
-import { Env, RateLimitEntry } from './types';
+import { Env, UsageEntry } from './types';
 
-const RATE_LIMIT_PREFIX = 'rate:';
+const USAGE_PREFIX = 'usage:';
+const THROTTLE_PREFIX = 'throttle:';
+const DEFAULT_FREE_LIMIT = 5;
 
-function getTodayKey(deviceId: string): string {
-  const today = new Date().toISOString().split('T')[0];
-  return `${RATE_LIMIT_PREFIX}${deviceId}:${today}`;
+export interface QuotaStatus {
+  allowed: boolean;
+  used: number;
+  /** -1 means unlimited */
+  limit: number;
+  /** -1 means unlimited */
+  remaining: number;
 }
 
-function getTomorrowReset(): string {
-  const tomorrow = new Date();
-  tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
-  tomorrow.setUTCHours(0, 0, 0, 0);
-  return tomorrow.toISOString();
+export function getFreeLimit(env: Env): number {
+  const parsed = parseInt(env.FREE_LIFETIME_LIMIT ?? '', 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : DEFAULT_FREE_LIMIT;
 }
 
-export async function checkRateLimit(
-  env: Env,
-  deviceId: string,
-  isPremium: boolean
-): Promise<{ allowed: boolean; used: number; limit: number; resetsAt: string }> {
-  // Premium users have unlimited
-  if (isPremium) {
-    return {
-      allowed: true,
-      used: 0,
-      limit: -1, // Unlimited
-      resetsAt: '',
-    };
-  }
+async function getUsedCount(env: Env, deviceId: string): Promise<number> {
+  const entry = await env.RATE_LIMITS.get<UsageEntry>(`${USAGE_PREFIX}${deviceId}`, 'json');
+  return entry?.count ?? 0;
+}
 
-  const limit = parseInt(env.FREE_DAILY_LIMIT) || 3;
-  const key = getTodayKey(deviceId);
-  
-  const entry = await env.RATE_LIMITS.get<RateLimitEntry>(key, 'json');
-  const used = entry?.count || 0;
-  
+async function setUsedCount(env: Env, deviceId: string, count: number): Promise<void> {
+  // Lifetime allowance: no expiration.
+  await env.RATE_LIMITS.put(`${USAGE_PREFIX}${deviceId}`, JSON.stringify({ count } satisfies UsageEntry));
+}
+
+function status(used: number, limit: number): QuotaStatus {
   return {
     allowed: used < limit,
     used,
     limit,
-    resetsAt: getTomorrowReset(),
+    remaining: Math.max(0, limit - used),
   };
 }
 
-export async function incrementUsage(env: Env, deviceId: string): Promise<void> {
-  const key = getTodayKey(deviceId);
-  const entry = await env.RATE_LIMITS.get<RateLimitEntry>(key, 'json');
-  
-  const newEntry: RateLimitEntry = {
-    count: (entry?.count || 0) + 1,
-    date: new Date().toISOString().split('T')[0],
-  };
-  
-  // Expire at end of day (86400 seconds = 24 hours, but we'll set it to expire at midnight UTC + buffer)
-  const ttl = 86400 + 3600; // 25 hours to be safe
-  await env.RATE_LIMITS.put(key, JSON.stringify(newEntry), { expirationTtl: ttl });
+const UNLIMITED: QuotaStatus = { allowed: true, used: 0, limit: -1, remaining: -1 };
+
+export async function getQuota(env: Env, deviceId: string, isPremium: boolean): Promise<QuotaStatus> {
+  if (isPremium) return UNLIMITED;
+  return status(await getUsedCount(env, deviceId), getFreeLimit(env));
 }
 
-export async function getUsageStats(
+/**
+ * Reserves one free AI use before the (slow) OpenAI call so concurrent requests
+ * can't all pass the check. KV has no atomic increment, so a tiny race window
+ * remains; call refundUsage if the request ultimately fails.
+ */
+export async function reserveUsage(env: Env, deviceId: string): Promise<QuotaStatus> {
+  const limit = getFreeLimit(env);
+  const used = await getUsedCount(env, deviceId);
+  if (used >= limit) {
+    return status(used, limit);
+  }
+  await setUsedCount(env, deviceId, used + 1);
+  return { ...status(used + 1, limit), allowed: true };
+}
+
+export async function refundUsage(env: Env, deviceId: string): Promise<void> {
+  const used = await getUsedCount(env, deviceId);
+  if (used > 0) {
+    await setUsedCount(env, deviceId, used - 1);
+  }
+}
+
+/**
+ * Fixed-window throttle. Returns true if the request is allowed.
+ */
+export async function throttle(
   env: Env,
-  deviceId: string,
-  isPremium: boolean
-): Promise<{ used: number; limit: number; resetsAt: string; isPremium: boolean }> {
-  const { used, limit, resetsAt } = await checkRateLimit(env, deviceId, isPremium);
-  return { used, limit, resetsAt, isPremium };
+  key: string,
+  maxRequests: number,
+  windowSeconds: number
+): Promise<boolean> {
+  const window = Math.floor(Date.now() / 1000 / windowSeconds);
+  const kvKey = `${THROTTLE_PREFIX}${key}:${window}`;
+  const count = parseInt((await env.RATE_LIMITS.get(kvKey)) ?? '0', 10) || 0;
+  if (count >= maxRequests) return false;
+  // KV minimum TTL is 60 seconds.
+  await env.RATE_LIMITS.put(kvKey, String(count + 1), {
+    expirationTtl: Math.max(60, windowSeconds * 2),
+  });
+  return true;
 }

@@ -8,10 +8,15 @@ export interface Env {
   // Secrets
   OPENAI_API_KEY: string;
   JWT_SECRET: string;
+  // RevenueCat secret API key (v1 REST), used to verify entitlements server-side
+  REVENUECAT_API_KEY?: string;
+  // Value RevenueCat sends in the webhook Authorization header
+  REVENUECAT_WEBHOOK_SECRET?: string;
   
   // Config
   ENVIRONMENT: string;
-  FREE_DAILY_LIMIT: string;
+  FREE_LIFETIME_LIMIT: string;
+  REVENUECAT_ENTITLEMENT_ID: string;
   CACHE_TTL_SECONDS: string;
 }
 
@@ -44,29 +49,34 @@ export interface DecomposeResponse {
 
 export interface UsageResponse {
   used: number;
+  /** -1 means unlimited (premium) */
   limit: number;
-  resetsAt: string;
+  /** -1 means unlimited (premium) */
+  remaining: number;
   isPremium: boolean;
 }
 
 export interface TokenPayload {
   deviceId: string;
-  isPremium: boolean;
-  userId?: string;
+  /** Legacy claim from older tokens. Ignored: premium is always verified server-side. */
+  isPremium?: boolean;
   iat: number;
   exp: number;
 }
 
-export interface RateLimitEntry {
+export interface UsageEntry {
   count: number;
-  date: string;
 }
 
-export interface UserRecord {
-  deviceId: string;
-  isPremium: boolean;
-  premiumUntil?: string;
+export interface DeviceRecord {
   revenueCatId?: string;
-  createdAt: string;
-  lastSeen: string;
+  linkedAt?: string;
+}
+
+export interface PremiumRecord {
+  isPremium: boolean;
+  /** ISO date of entitlement expiry, null for lifetime / non-expiring */
+  expiresAt: string | null;
+  /** epoch millis of last RevenueCat check */
+  checkedAt: number;
 }

@@ -39,7 +39,7 @@ void main() {
     expect(provider.canDecompose, isTrue);
     expect(provider.canBreakDownForFree, isTrue);
     expect(provider.remainingFreeDecompositions, -1);
-    expect(provider.remainingFreeBreakdowns, 999);
+    expect(provider.remainingFreeBreakdowns, -1);
   });
 
   test('debug entitlement notifies premium feature consumers', () {

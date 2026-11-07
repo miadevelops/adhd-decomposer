@@ -37,7 +37,7 @@ class AchievementsService extends ChangeNotifier {
   StatsService? _statsService;
 
   // List of newly unlocked achievements to celebrate
-  List<Achievement> _newlyUnlockedQueue = [];
+  final List<Achievement> _newlyUnlockedQueue = [];
 
   Future<void> initialize(StatsService statsService) async {
     _box = await Hive.openBox(_boxName);
@@ -156,7 +156,11 @@ class AchievementsService extends ChangeNotifier {
     if (stored == null) return {};
     try {
       return Set<String>.from(jsonDecode(stored) as List);
-    } catch (_) {
+    } catch (e) {
+      debugPrint('AchievementsService: could not read unlocked achievements: $e');
+      // Keep a copy so the next write doesn't destroy it
+      const backupKey = '${keyUnlockedAchievements}_corrupt';
+      if (_safeBox.get(backupKey) == null) _safeBox.put(backupKey, stored);
       return {};
     }
   }

@@ -13,7 +13,7 @@
 - [x] Onboarding flow (4 screens)
 - [x] Settings persistence (Hive)
 - [x] Paywall UI ($4.99/mo, $29.99/yr)
-- [x] Usage tracking (3 free decompositions)
+- [x] Usage tracking (5 free lifetime AI breakdowns, enforced server-side)
 - [x] API key input for power users
 - [x] Sound effects (step/task complete, timer)
 

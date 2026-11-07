@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 
 /// AI Coach personality types for different moods/preferences
@@ -33,18 +35,24 @@ class Coach {
     required this.promptStyle,
   });
   
+  static final Random _random = Random();
+
+  /// Picked once per app launch so the greeting doesn't change every time
+  /// the screen rebuilds.
+  static final int _sessionGreetingSeed = _random.nextInt(1 << 16);
+
   /// Get a random completion message
   String getRandomCompletionMessage() {
-    return completionMessages[DateTime.now().millisecondsSinceEpoch % completionMessages.length];
+    return completionMessages[_random.nextInt(completionMessages.length)];
   }
   
   /// Get a random stuck message
   String getRandomStuckMessage() {
-    return stuckMessages[DateTime.now().millisecondsSinceEpoch % stuckMessages.length];
+    return stuckMessages[_random.nextInt(stuckMessages.length)];
   }
   
-  /// Get a random greeting
+  /// Get this session's greeting (stable across rebuilds, varies per launch)
   String getRandomGreeting() {
-    return greetings[DateTime.now().millisecondsSinceEpoch % greetings.length];
+    return greetings[_sessionGreetingSeed % greetings.length];
   }
 }

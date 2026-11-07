@@ -18,8 +18,15 @@ id = "bc440f00f5134b0da4e17b05100ecf33"
 # Environment variables (secrets set via wrangler secret put)
 # OPENAI_API_KEY - set via: wrangler secret put OPENAI_API_KEY
 # JWT_SECRET - set via: wrangler secret put JWT_SECRET
+# REVENUECAT_API_KEY - RevenueCat secret (sk_...) API key, used to verify premium server-side:
+#   wrangler secret put REVENUECAT_API_KEY
+# REVENUECAT_WEBHOOK_SECRET - must match the Authorization header configured for the
+#   RevenueCat webhook (https://<worker>/v1/webhook/revenuecat):
+#   wrangler secret put REVENUECAT_WEBHOOK_SECRET
 
 [vars]
 ENVIRONMENT = "production"
-FREE_DAILY_LIMIT = "3"
+# Lifetime number of free AI breakdowns per device (task + "I'm stuck" breakdowns)
+FREE_LIFETIME_LIMIT = "5"
+REVENUECAT_ENTITLEMENT_ID = "entl2de33d59e5"
 CACHE_TTL_SECONDS = "86400"

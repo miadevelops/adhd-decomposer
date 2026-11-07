@@ -49,7 +49,7 @@ Each step shown one at a time. Confetti when you complete one. No guilt if you s
 - ♿ **Accessible** - Screen reader support, large touch targets, respects system settings
 
 ### Freemium Model
-- 3 free AI decompositions per day
+- 5 free AI breakdowns total (task breakdowns and "I'm stuck" step breakdowns both count)
 - Unlimited templates always free
 - Premium: $4.99/mo or $29.99/year for unlimited AI
 
@@ -61,17 +61,36 @@ Each step shown one at a time. Confetti when you complete one. No guilt if you s
 
 ### Prerequisites
 
-- Flutter 3.19+
+- Flutter 3.24+ (tested with 3.47)
 - Dart 3.5+
 - Android SDK 34+
 
 ### Installation
 
 ```bash
-git clone https://github.com/mia-assistant/adhd-decomposer.git
+git clone https://github.com/miadevelops/adhd-decomposer.git
 cd adhd-decomposer
 flutter pub get
 flutter run
+```
+
+### Build configuration
+
+Defaults point at the production API and RevenueCat project. Override them per build with `--dart-define`:
+
+| Define | Purpose |
+|---|---|
+| `TINYSTEPS_API_URL` | Backend base URL (e.g. `http://10.0.2.2:8787` for `wrangler dev` from the Android emulator) |
+| `REVENUECAT_ANDROID_KEY` | RevenueCat public SDK key for Android |
+| `REVENUECAT_IOS_KEY` | RevenueCat public SDK key for iOS |
+
+The Nunito and Inter fonts are bundled in `assets/google_fonts/` (with their OFL licenses), so the app never downloads fonts at runtime.
+
+### Tests
+
+```bash
+flutter analyze
+flutter test
 ```
 
 ### Build APK
@@ -122,7 +141,7 @@ lib/
 
 - **Flutter** - Cross-platform UI
 - **Provider** - State management  
-- **Hive** - Local encrypted storage
+- **Hive** - Local storage
 - **OpenAI API** - Task decomposition (optional - works with mock data)
 - **Confetti** - Celebration animations
 - **Flutter Animate** - Smooth UI transitions

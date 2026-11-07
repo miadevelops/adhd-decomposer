@@ -16,8 +16,11 @@ class RateAppDialog extends StatelessWidget {
     this.onDismiss,
   });
   
+  /// Shows the prompt if it's due and records that it was shown, so each
+  /// prompt counts once no matter which button (if any) is pressed.
   static Future<void> showIfNeeded(BuildContext context, SettingsService settings) async {
     if (!settings.shouldShowRatePrompt) return;
+    settings.recordRatePromptShown();
     
     await showDialog(
       context: context,
@@ -28,8 +31,6 @@ class RateAppDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final analytics = AnalyticsService();
-    
     return AlertDialog(
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(20),
@@ -55,7 +56,6 @@ class RateAppDialog extends StatelessWidget {
         TextButton(
           onPressed: () {
             AnalyticsService.trackRateAppResponse('ask_later');
-            settings.recordRatePromptShown();
             Navigator.of(context).pop();
             onDismiss?.call();
           },
@@ -65,10 +65,12 @@ class RateAppDialog extends StatelessWidget {
         TextButton(
           onPressed: () {
             AnalyticsService.trackRateAppResponse('not_really');
-            settings.recordRatePromptShown();
-            Navigator.of(context).pop();
+            // The dialog's context is gone once it's popped, so grab the
+            // navigator first.
+            final navigator = Navigator.of(context);
+            navigator.pop();
             // Navigate to feedback form
-            Navigator.of(context).push(
+            navigator.push(
               MaterialPageRoute(builder: (_) => const FeedbackScreen()),
             );
           },

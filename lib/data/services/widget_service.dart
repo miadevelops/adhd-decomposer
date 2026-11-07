@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:home_widget/home_widget.dart';
@@ -23,7 +21,7 @@ class WidgetService {
   
   /// Check if the device supports programmatic widget pinning (Android 8.0+)
   static Future<bool> isWidgetPinSupported() async {
-    if (!Platform.isAndroid) return false;
+    if (!(!kIsWeb && defaultTargetPlatform == TargetPlatform.android)) return false;
     try {
       final result = await _pinChannel.invokeMethod<bool>('isWidgetPinSupported');
       return result ?? false;
@@ -36,7 +34,7 @@ class WidgetService {
   /// Request the system to pin the widget to the home screen (Android 8.0+).
   /// Returns true if the request was sent (user still needs to confirm).
   static Future<bool> requestPinWidget({String widgetClass = 'CurrentTaskWidget'}) async {
-    if (!Platform.isAndroid) return false;
+    if (!(!kIsWeb && defaultTargetPlatform == TargetPlatform.android)) return false;
     try {
       final result = await _pinChannel.invokeMethod<bool>(
         'requestPinWidget',
